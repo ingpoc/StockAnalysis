@@ -33,7 +33,8 @@ class ProjectTracker:
                 "completed_features": [],
                 "in_progress": [],
                 "implemented_apis": {},
-                "db_schemas": {}
+                "db_schemas": {},
+                "services": {}
             },
             "frontend": {
                 "completed_components": [],
@@ -66,6 +67,7 @@ class ProjectTracker:
         print(f"APIs: {len(backend.get('implemented_apis', {}))}")
         print(f"DB Schemas: {len(backend.get('db_schemas', {}))}")
         print(f"Completed Features: {len(backend.get('completed_features', []))}")
+        print(f"Services: {len(backend.get('services', {}))}")
         
         print("\nFrontend Status:")
         print(f"Total Components: {len(frontend.get('ui_components', {}))}")

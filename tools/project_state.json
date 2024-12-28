@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "last_updated": "2024-12-28T17:14:31.245479",
+  "last_updated": "2024-12-28T21:50:10.432126",
   "backend": {
     "completed_features": [
       "Market data retrieval",
@@ -108,16 +108,16 @@
         "path": "src\\features\\market-overview\\MarketOverview.jsx",
         "type": "component",
         "dependencies": [
-          "./components/ErrorBoundary",
-          "./components/LoadingOverview",
           "@/components/ui/tabs",
-          "./components/StockTable",
-          "./hooks/useMarketData",
           "lucide-react",
-          "@/components/ui/button",
+          "./components/LoadingOverview",
           "react",
-          "./components/AIAnalysisModal",
           "@/components/ui/select",
+          "./components/AIAnalysisModal",
+          "./components/ErrorBoundary",
+          "@/components/ui/button",
+          "./hooks/useMarketData",
+          "./components/StockTable",
           "@/components/ui/use-toast",
           "@/components/ui/card"
         ]
@@ -139,51 +139,52 @@
         "type": "component",
         "dependencies": [
           "@/components/ui/tabs",
-          "./components/QuarterlyResults",
-          "react-router-dom",
-          "react",
-          "./components/CompanyOverview",
           "./components/FinancialMetrics",
+          "react",
+          "@/components/ui/alert",
+          "@/components/ui/skeleton",
+          "./components/QuarterlyResults",
+          "./components/CompanyOverview",
           "./components/TechnicalIndicators",
-          "./hooks/useStockDetails",
-          "@/components/ui/card"
+          "react-router-dom",
+          "@/services/api"
         ]
       },
       "FinancialMetrics": {
         "path": "src\\features\\stock-details\\components\\FinancialMetrics.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/card",
           "lucide-react",
-          "react"
+          "react",
+          "@/components/ui/card"
         ]
       },
       "QuarterlyResults": {
         "path": "src\\features\\stock-details\\components\\QuarterlyResults.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/card",
-          "recharts",
           "lucide-react",
-          "react"
+          "react",
+          "recharts",
+          "@/components/ui/card"
         ]
       },
       "TechnicalIndicators": {
         "path": "src\\features\\stock-details\\components\\TechnicalIndicators.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/card",
           "lucide-react",
-          "react"
+          "react",
+          "@/components/ui/card"
         ]
       },
       "CompanyOverview": {
         "path": "src\\features\\stock-details\\components\\CompanyOverview.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/card",
           "lucide-react",
-          "react"
+          "react",
+          "@/components/ui/card"
         ]
       },
       "alert": {
@@ -191,64 +192,64 @@
         "type": "component",
         "dependencies": [
           "class-variance-authority",
-          "@/lib/utils",
-          "react"
+          "react",
+          "@/lib/utils"
         ]
       },
       "button": {
         "path": "src\\components\\ui\\button.jsx",
         "type": "component",
         "dependencies": [
-          "class-variance-authority",
           "@radix-ui/react-slot",
-          "@/lib/utils",
-          "react"
+          "class-variance-authority",
+          "react",
+          "@/lib/utils"
         ]
       },
       "card": {
         "path": "src\\components\\ui\\card.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
-          "react"
+          "react",
+          "@/lib/utils"
         ]
       },
       "dialog": {
         "path": "src\\components\\ui\\dialog.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
-          "@radix-ui/react-dialog",
           "lucide-react",
-          "react"
+          "@radix-ui/react-dialog",
+          "react",
+          "@/lib/utils"
         ]
       },
       "dropdown-menu": {
         "path": "src\\components\\ui\\dropdown-menu.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
-          "@radix-ui/react-dropdown-menu",
           "lucide-react",
-          "react"
+          "@radix-ui/react-dropdown-menu",
+          "react",
+          "@/lib/utils"
         ]
       },
       "input": {
         "path": "src\\components\\ui\\input.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
-          "react"
+          "react",
+          "@/lib/utils"
         ]
       },
       "select": {
         "path": "src\\components\\ui\\select.jsx",
         "type": "component",
         "dependencies": [
-          "@radix-ui/react-select",
           "lucide-react",
           "@/lib/utils",
-          "react"
+          "react",
+          "@radix-ui/react-select"
         ]
       },
       "skeleton": {
@@ -262,28 +263,28 @@
         "path": "src\\components\\ui\\table.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
-          "react"
+          "react",
+          "@/lib/utils"
         ]
       },
       "tabs": {
         "path": "src\\components\\ui\\tabs.jsx",
         "type": "component",
         "dependencies": [
-          "@/lib/utils",
           "@radix-ui/react-tabs",
-          "react"
+          "react",
+          "@/lib/utils"
         ]
       },
       "toast": {
         "path": "src\\components\\ui\\toast.jsx",
         "type": "component",
         "dependencies": [
-          "class-variance-authority",
-          "@radix-ui/react-toast",
           "lucide-react",
           "react",
-          "@/lib/utils"
+          "class-variance-authority",
+          "@/lib/utils",
+          "@radix-ui/react-toast"
         ]
       },
       "toaster": {
@@ -297,11 +298,11 @@
         "path": "src\\features\\market-overview\\components\\AIAnalysisModal.jsx",
         "type": "component",
         "dependencies": [
-          "../hooks/useAIAnalysis",
           "lucide-react",
-          "@/components/ui/button",
           "react",
           "@/components/ui/skeleton",
+          "@/components/ui/button",
+          "../hooks/useAIAnalysis",
           "@/components/ui/card"
         ]
       },
@@ -309,46 +310,46 @@
         "path": "src\\features\\market-overview\\components\\ErrorBoundary.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/button",
           "lucide-react",
-          "@/components/ui/alert",
-          "react"
+          "@/components/ui/button",
+          "react",
+          "@/components/ui/alert"
         ]
       },
       "LoadingOverview": {
         "path": "src\\features\\market-overview\\components\\LoadingOverview.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/card",
           "react",
-          "@/components/ui/skeleton"
+          "@/components/ui/skeleton",
+          "@/components/ui/card"
         ]
       },
       "StockTable": {
         "path": "src\\features\\market-overview\\components\\StockTable.jsx",
         "type": "component",
         "dependencies": [
-          "../hooks/useTablePagination",
-          "../hooks/useVisibleColumns",
-          "../hooks/useTableSort",
           "xlsx",
           "react",
-          "../hooks/useTableSearch",
-          "./table/TablePagination",
-          "./table/TableToolbar",
           "./table/TableRow",
-          "./table/TableHeader",
+          "../hooks/useTablePagination",
+          "../hooks/useVisibleColumns",
           "./table/TableSkeleton",
-          "@/components/ui/table"
+          "@/components/ui/table",
+          "./table/TableHeader",
+          "./table/TablePagination",
+          "../hooks/useTableSearch",
+          "./table/TableToolbar",
+          "../hooks/useTableSort"
         ]
       },
       "TableHeader": {
         "path": "src\\features\\market-overview\\components\\table\\TableHeader.jsx",
         "type": "component",
         "dependencies": [
+          "lucide-react",
           "@/components/ui/table",
           "@/components/ui/button",
-          "lucide-react",
           "react"
         ]
       },
@@ -356,8 +357,8 @@
         "path": "src\\features\\market-overview\\components\\table\\TablePagination.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/button",
           "lucide-react",
+          "@/components/ui/button",
           "react"
         ]
       },
@@ -365,11 +366,11 @@
         "path": "src\\features\\market-overview\\components\\table\\TableRow.jsx",
         "type": "component",
         "dependencies": [
-          "react-router-dom",
           "lucide-react",
-          "@/components/ui/button",
+          "../../utils/formatters",
           "react",
-          "../../utils/formatters"
+          "@/components/ui/button",
+          "react-router-dom"
         ]
       },
       "TableSkeleton": {
@@ -384,10 +385,10 @@
         "path": "src\\features\\market-overview\\components\\table\\TableToolbar.jsx",
         "type": "component",
         "dependencies": [
-          "@/components/ui/button",
+          "lucide-react",
           "@/components/ui/input",
-          "react",
-          "lucide-react"
+          "@/components/ui/button",
+          "react"
         ]
       }
     }
