@@ -73,6 +73,35 @@ class MarketService:
             "recommendation": fundamental_insights if fundamental_insights else "--"
         }
 
+    async def get_stock_details(self, symbol: str) -> StockResponse:
+        """Get detailed stock information including financials"""
+        try:
+            db = await self.get_db()
+            stock = await db.detailed_financials.find_one({"symbol": symbol})
+            
+            if not stock:
+                raise Exception(f"Stock with symbol {symbol} not found")
+                
+            # Convert to StockData model
+            stock_data = StockData(
+                company_name=stock["company_name"],
+                symbol=stock["symbol"],
+                financial_metrics=stock["financial_metrics"],
+                timestamp=stock.get("timestamp", datetime.now())
+            )
+            
+            # Extract formatted metrics
+            formatted_metrics = self._extract_latest_metrics(stock)
+            
+            return StockResponse(
+                stock=stock_data,
+                formatted_metrics=formatted_metrics or {}
+            )
+            
+        except Exception as e:
+            logger.error(f"Error fetching stock details for {symbol}: {str(e)}")
+            raise Exception(f"Failed to fetch stock details: {str(e)}")
+
     @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_market_data(self, quarter: Optional[str] = None, force_refresh: bool = False) -> MarketOverview:
         """Get market overview data with optional quarter filter"""
