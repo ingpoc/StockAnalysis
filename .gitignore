@@ -13,3 +13,4 @@ uv.lock
 .venv
 
 .env
+**/project_state.json*
