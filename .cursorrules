@@ -1,0 +1,41 @@
+# Project-Specific Instructions for Cursor AI
+
+## General Guidelines
+- Always write clear, readable, and well-documented Python code.
+- Follow PEP 8 style guidelines for code formatting.
+- Prioritize code readability over performance unless specified otherwise.
+
+## Code Structure
+- Use type hints for function signatures to enhance code clarity.
+- Implement error handling using appropriate exception types.
+- Write unit tests for all new functions and classes using the `unittest` framework.
+
+## Libraries and Frameworks
+- Prefer using standard Python libraries when possible.
+- For web development, use the Flask framework.
+- For data manipulation, use pandas and NumPy libraries.
+
+## Documentation
+- Include docstrings for all public modules, classes, and functions.
+- Follow the Google style guide for Python docstrings.
+
+## Security Practices
+- Avoid using wildcard imports; import only necessary functions or classes.
+- Sanitize all inputs to prevent injection attacks.
+- Store sensitive information, like API keys, in environment variables.
+
+## Performance Considerations
+- Optimize database queries to minimize load times.
+- Use list comprehensions for creating lists when appropriate.
+- Avoid using global variables; pass parameters explicitly.
+
+## Collaboration
+- Write descriptive commit messages summarizing code changes.
+- Ensure all code passes linting and tests before committing.
+- Document any deviations from standard practices within the code.
+
+## AI Interaction
+- When generating code, provide detailed prompts to the AI for accurate results.
+- Review and test AI-generated code thoroughly before integration.
+- Update this `.cursorrules` file as project requirements evolve.
+
