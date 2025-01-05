@@ -1,41 +1,101 @@
 # Project-Specific Instructions for Cursor AI
 
 ## General Guidelines
-- Always write clear, readable, and well-documented Python code.
-- Follow PEP 8 style guidelines for code formatting.
-- Prioritize code readability over performance unless specified otherwise.
+- Write clear, readable, and well-documented Python code
+- Follow PEP 8 style guidelines for code formatting
+- Use type hints consistently throughout the codebase
+- Implement proper error handling and logging
 
 ## Code Structure
-- Use type hints for function signatures to enhance code clarity.
-- Implement error handling using appropriate exception types.
-- Write unit tests for all new functions and classes using the `unittest` framework.
+- Organize code using feature-based architecture:
+  - `src/api/` - API endpoints and routers
+  - `src/services/` - Business logic and service layer
+  - `src/models/` - Data models and schemas
+  - `src/utils/` - Utility functions and helpers
+- Use async/await patterns consistently
+- Implement proper dependency injection
 
-## Libraries and Frameworks
-- Prefer using standard Python libraries when possible.
-- For web development, use the Flask framework.
-- For data manipulation, use pandas and NumPy libraries.
+## FastAPI Implementation
+- Use FastAPI router for endpoint organization
+- Implement proper request/response models using Pydantic
+- Use proper HTTP status codes and error responses
+- Include API documentation using FastAPI's built-in swagger
+
+## Database Integration
+- Use Motor for async MongoDB operations
+- Implement connection pooling and proper connection management
+- Use proper database indexing for optimization
+- Implement database migration utilities
+
+## Models and Schemas
+- Use Pydantic models for data validation
+- Implement proper model inheritance where applicable
+- Include field validators and custom types
+- Document all model fields
+
+## Error Handling
+- Use custom exception classes
+- Implement proper error logging
+- Return appropriate HTTP status codes
+- Include detailed error messages for debugging
+
+## Caching
+- Implement TTL-based caching for appropriate endpoints
+- Use proper cache invalidation strategies
+- Document cache duration and strategy
+- Implement force refresh mechanisms
+
+## Security
+- Store sensitive information in environment variables
+- Implement proper input validation
+- Use secure password hashing (bcrypt)
+- Implement proper authentication/authorization
+
+## Performance
+- Implement database query optimization
+- Use proper indexing strategies
+- Implement connection pooling
+- Use async operations where appropriate
+
+## Testing
+- Write unit tests using pytest
+- Implement integration tests for API endpoints
+- Use proper test fixtures and mocking
+- Maintain minimum 80% test coverage
 
 ## Documentation
-- Include docstrings for all public modules, classes, and functions.
-- Follow the Google style guide for Python docstrings.
+- Include docstrings for all functions and classes
+- Follow Google style docstring format
+- Document all API endpoints
+- Maintain up-to-date README
 
-## Security Practices
-- Avoid using wildcard imports; import only necessary functions or classes.
-- Sanitize all inputs to prevent injection attacks.
-- Store sensitive information, like API keys, in environment variables.
+## Logging
+- Use proper logging levels
+- Include contextual information in logs
+- Implement proper error tracking
+- Use structured logging format
 
-## Performance Considerations
-- Optimize database queries to minimize load times.
-- Use list comprehensions for creating lists when appropriate.
-- Avoid using global variables; pass parameters explicitly.
+## Data Processing
+- Implement proper data validation
+- Use pandas for data manipulation
+- Implement proper error handling for data processing
+- Use appropriate data types
 
-## Collaboration
-- Write descriptive commit messages summarizing code changes.
-- Ensure all code passes linting and tests before committing.
-- Document any deviations from standard practices within the code.
+## AI Integration
+- Implement proper AI service integration
+- Use async operations for AI processing
+- Include proper error handling for AI services
+- Document AI model versions and requirements
 
-## AI Interaction
-- When generating code, provide detailed prompts to the AI for accurate results.
-- Review and test AI-generated code thoroughly before integration.
-- Update this `.cursorrules` file as project requirements evolve.
+## Version Control
+- Follow conventional commits specification
+- Include meaningful PR descriptions
+- Keep functions focused and single-responsibility
+- Document breaking changes
+
+## Dependencies
+- Use specific version numbers in requirements
+- Document third-party dependencies
+- Implement proper dependency injection
+- Keep dependencies up to date
 
