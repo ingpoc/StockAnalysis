@@ -17,7 +17,7 @@ class MarketService:
             self.db = await get_database()
         return self.db
 
-    def _extract_latest_metrics(self, stock: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_latest_metrics(self, stock: Dict[str, Any], quarter: Optional[str] = None) -> Dict[str, Any]:
         """Extract and process latest metrics from a stock document"""
         if stock is None or not isinstance(stock.get("financial_metrics"), list):
             return None
@@ -26,7 +26,14 @@ class MarketService:
         if not metrics:
             return None
             
-        latest_metric = metrics[-1]  # Get the most recent metrics
+        # If quarter is specified, find the metric for that quarter
+        if quarter:
+            matching_metrics = [m for m in metrics if m.get("quarter") == quarter]
+            if not matching_metrics:
+                return None
+            latest_metric = matching_metrics[-1]  # Get the most recent matching metric
+        else:
+            latest_metric = metrics[-1]  # Get the most recent metrics
         
         # Extract counts from strings like "Strengths (12)" and "Weaknesses (5)"
         def extract_count(text: str) -> str:
@@ -117,7 +124,7 @@ class MarketService:
             cursor = db.detailed_financials.find(query)
             stocks = []
             async for stock in cursor:
-                processed_stock = self._extract_latest_metrics(stock)
+                processed_stock = self._extract_latest_metrics(stock, quarter)
                 if processed_stock:
                     stocks.append(processed_stock)
 
