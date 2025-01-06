@@ -92,11 +92,11 @@ class AIAnalysis(BaseModel):
     company_name: str
     symbol: str
     analysis: str
-    sentiment: Dict[str, Any]
-    technical_indicators: Dict[str, Any]
-    fundamental_analysis: Dict[str, Any]
-    recommendation: str
-    timestamp: datetime
+    sentiment: Dict[str, Any] = Field(default_factory=lambda: {"score": 0.5, "label": "Neutral"})
+    technical_indicators: Dict[str, Any] = Field(default_factory=dict)
+    fundamental_analysis: Dict[str, Any] = Field(default_factory=dict)
+    recommendation: str = "No recommendation"
+    timestamp: datetime = Field(default_factory=datetime.now)
 
     class Config:
         populate_by_name = True
