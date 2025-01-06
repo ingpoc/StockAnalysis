@@ -1,6 +1,27 @@
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from pydantic import BaseModel, Field, GetJsonSchemaHandler
+from typing import List, Optional, Dict, Any, Annotated
 from datetime import datetime
+from bson import ObjectId
+from pydantic_core import CoreSchema, core_schema
+from pydantic.json_schema import JsonSchemaValue
+
+class PyObjectId(str):
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        _source_type: type[Any],
+        _handler: GetJsonSchemaHandler,
+    ) -> CoreSchema:
+        return core_schema.json_or_python_schema(
+            json_schema=core_schema.str_schema(),
+            python_schema=core_schema.union_schema([
+                core_schema.str_schema(),
+                core_schema.is_instance_schema(ObjectId),
+            ]),
+            serialization=core_schema.plain_serializer_function_ser_schema(
+                lambda x: str(x) if isinstance(x, ObjectId) else x
+            ),
+        )
 
 class FinancialMetric(BaseModel):
     market_cap: Optional[str] = ""
@@ -67,19 +88,32 @@ class AnalysisSentiment(BaseModel):
     label: str
 
 class AIAnalysis(BaseModel):
-    id: str = Field(alias='_id')
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
     company_name: str
     symbol: str
     analysis: str
+    sentiment: Dict[str, Any]
+    technical_indicators: Dict[str, Any]
+    fundamental_analysis: Dict[str, Any]
     recommendation: str
-    sentiment: AnalysisSentiment
-    technical_indicators: Dict[str, Any] = Field(default_factory=dict)
-    fundamental_analysis: Dict[str, Any] = Field(default_factory=dict)
-    timestamp: datetime = Field(default_factory=datetime.now)
-    
+    timestamp: datetime
+
     class Config:
         populate_by_name = True
-        extra = "allow"
+        json_encoders = {
+            ObjectId: str,
+            datetime: lambda dt: dt.isoformat()
+        }
+        arbitrary_types_allowed = True
+
+    @classmethod
+    def from_mongo(cls, data: dict):
+        """Convert MongoDB document to AIAnalysis model"""
+        if not data:
+            return None
+        if "_id" in data:
+            data["id"] = str(data["_id"])
+        return cls.model_validate(data)
 
 class AIAnalysisHistory(BaseModel):
     analyses: List[AIAnalysis] = Field(default_factory=list)
@@ -95,3 +129,8 @@ class AIAnalysisResponse(BaseModel):
     content: str
     timestamp: datetime
     recommendation: str
+
+    class Config:
+        json_encoders = {
+            datetime: lambda dt: dt.isoformat()
+        }

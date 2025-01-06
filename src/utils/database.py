@@ -13,7 +13,7 @@ db = Database()
 async def get_database():
     if db.client is None:  # Changed from 'if not db.client'
         await connect_to_mongodb()
-    return db.client[settings.DB_NAME]
+    return db.client[settings.MONGODB_DB_NAME]
 
 async def connect_to_mongodb():
     logger.info("Connecting to MongoDB...")

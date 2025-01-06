@@ -4,10 +4,12 @@ from datetime import datetime
 from src.models.schemas import MarketOverview, StockResponse, AIAnalysis
 from src.services.market_service import MarketService
 from src.services.ai_service import AIService
+import logging
 
 router = APIRouter()
 market_service = MarketService()
 ai_service = AIService()
+logger = logging.getLogger(__name__)
 
 @router.get("/market-data", response_model=MarketOverview)
 async def get_market_data(quarter: Optional[str] = None, force_refresh: bool = False):
@@ -58,15 +60,22 @@ async def get_analysis_content(analysis_id: str):
 async def refresh_analysis(symbol: str):
     """Generate new AI analysis for a stock"""
     try:
+        logger.info(f"Starting refresh analysis for symbol: {symbol}")
         new_analysis = await ai_service.analyze_stock(symbol)
+        logger.info(f"Successfully generated analysis for {symbol}")
         return {
             "id": str(new_analysis.id),
-            "content": new_analysis.analysis,
+            "content": new_analysis.content,
             "timestamp": new_analysis.timestamp,
             "recommendation": new_analysis.recommendation
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error in refresh_analysis endpoint for {symbol}: {str(e)}")
+        logger.exception("Full traceback:")  # This will log the full stack trace
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate analysis: {str(e)}"
+        )
 
 @router.get("/quarters")
 async def get_quarters():
