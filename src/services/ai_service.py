@@ -5,6 +5,7 @@ from src.models.schemas import AIAnalysis, AIAnalysisResponse
 from src.utils.xai_utils import analyze_with_xai
 from src.utils.database import get_database
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -94,10 +95,10 @@ class AIService:
                     
                 logger.info(f"Generated new analysis for symbol: {symbol}")
                 
-                # Create response
+                # Create response with serialized content
                 response_data = {
                     "id": str(result.inserted_id),
-                    "content": analysis["analysis"],
+                    "content": json.dumps(analysis["analysis"]) if isinstance(analysis["analysis"], dict) else analysis["analysis"],
                     "timestamp": analysis["timestamp"],
                     "recommendation": analysis["recommendation"]
                 }

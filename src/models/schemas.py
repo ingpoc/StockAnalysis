@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, GetJsonSchemaHandler
-from typing import List, Optional, Dict, Any, Annotated
+from typing import List, Optional, Dict, Any, Annotated, Union
 from datetime import datetime
 from bson import ObjectId
 from pydantic_core import CoreSchema, core_schema
@@ -87,11 +87,22 @@ class AnalysisSentiment(BaseModel):
     score: float
     label: str
 
+class RisksOpportunities(BaseModel):
+    risks: List[str]
+    opportunities: List[str]
+
+class AnalysisContent(BaseModel):
+    sentiment_summary: str
+    key_factors: List[str]
+    news_impact: List[str]
+    risks_opportunities: RisksOpportunities
+    forward_outlook: str
+
 class AIAnalysis(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", default=None)
     company_name: str
     symbol: str
-    analysis: str
+    analysis: Union[str, AnalysisContent]  # Allow both string and structured format
     sentiment: Dict[str, Any] = Field(default_factory=lambda: {"score": 0.5, "label": "Neutral"})
     technical_indicators: Dict[str, Any] = Field(default_factory=dict)
     fundamental_analysis: Dict[str, Any] = Field(default_factory=dict)
@@ -108,11 +119,100 @@ class AIAnalysis(BaseModel):
 
     @classmethod
     def from_mongo(cls, data: dict):
-        """Convert MongoDB document to AIAnalysis model"""
+        """Convert MongoDB document to AIAnalysis model with backward compatibility"""
         if not data:
             return None
+            
         if "_id" in data:
             data["id"] = str(data["_id"])
+            
+        # Handle old format conversion
+        if isinstance(data.get("analysis"), str):
+            analysis_text = data["analysis"]
+            
+            # Clean up the text
+            analysis_text = analysis_text.replace('*', '')  # Remove asterisks
+            
+            # Split by sections and clean up
+            sections = [s.strip() for s in analysis_text.split('\n') if s.strip()]
+            
+            # Initialize structured sections
+            sentiment_summary = ""
+            key_factors = []
+            news_impact = []
+            risks = []
+            opportunities = []
+            forward_outlook = ""
+            
+            current_section = None
+            
+            # Parse the sections
+            for line in sections:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Check for section headers
+                lower_line = line.lower()
+                if "fundamental metrics" in lower_line:
+                    current_section = "fundamental"
+                    continue
+                elif "recent news" in lower_line:
+                    current_section = "news"
+                    continue
+                elif "recommendation" in lower_line:
+                    current_section = "recommendation"
+                    continue
+                elif "risks" in lower_line:
+                    current_section = "risks"
+                    continue
+                elif "opportunities" in lower_line:
+                    current_section = "opportunities"
+                    continue
+                
+                # Clean up the line
+                cleaned_line = line.strip(':-. ')
+                if not cleaned_line:
+                    continue
+                
+                # Add content to appropriate section
+                if current_section == "fundamental":
+                    key_factors.append(cleaned_line)
+                elif current_section == "news":
+                    news_impact.append(cleaned_line)
+                elif current_section == "recommendation":
+                    forward_outlook = cleaned_line
+                elif current_section == "risks":
+                    risks.append(cleaned_line)
+                elif current_section == "opportunities":
+                    opportunities.append(cleaned_line)
+                elif not current_section and cleaned_line:  # Unclassified content goes to key factors
+                    key_factors.append(cleaned_line)
+            
+            data["analysis"] = {
+                "sentiment_summary": sentiment_summary or "Analysis based on historical data",
+                "key_factors": [f for f in key_factors if f],  # Filter out empty strings
+                "news_impact": [n for n in news_impact if n],  # Filter out empty strings
+                "risks_opportunities": {
+                    "risks": risks,
+                    "opportunities": opportunities
+                },
+                "forward_outlook": forward_outlook
+            }
+        elif isinstance(data.get("analysis"), dict):
+            # Handle case where analysis is a dict but risks_opportunities is a list
+            analysis = data["analysis"]
+            if isinstance(analysis.get("risks_opportunities"), list):
+                analysis["risks_opportunities"] = {
+                    "risks": analysis["risks_opportunities"],
+                    "opportunities": []
+                }
+            elif not isinstance(analysis.get("risks_opportunities"), dict):
+                analysis["risks_opportunities"] = {
+                    "risks": [],
+                    "opportunities": []
+                }
+            
         return cls.model_validate(data)
 
 class AIAnalysisHistory(BaseModel):
@@ -126,7 +226,7 @@ class AIAnalysisRequest(BaseModel):
 
 class AIAnalysisResponse(BaseModel):
     id: str
-    content: str
+    content: Union[str, Dict[str, Any]]  # Allow both string and structured format
     timestamp: datetime
     recommendation: str
 

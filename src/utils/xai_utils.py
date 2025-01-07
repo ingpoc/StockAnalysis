@@ -31,15 +31,39 @@ async def analyze_with_xai(stock_data: Dict[str, Any]) -> Dict[str, Any]:
         # Prepare the system prompt and user message
         metrics = stock_data.get("financial_metrics", [])[0] if stock_data.get("financial_metrics") else {}
         
-        system_prompt = """You are a professional stock analyst. Analyze the given company's financial metrics 
-        and provide a comprehensive analysis including technical indicators, fundamental analysis, and sentiment score. 
-        Format your response as a JSON object with the following structure:
-        {
-            "analysis": "detailed analysis text",
-            "sentiment_score": float between 0 and 1,
-            "technical_analysis": {key-value pairs of technical indicators},
-            "fundamental_analysis": {key-value pairs of fundamental analysis}
-        }"""
+        system_prompt = """You are a professional stock analyst. Based on the provided financial metrics, provide unique insights focusing on:
+1. Overall market sentiment and investor perception
+2. Recent news impact and market reactions
+3. Key risks and opportunities not apparent in basic metrics
+4. Forward-looking predictions and potential catalysts
+
+Do not repeat basic financial metrics that are already visible to the user. Instead, focus on:
+- Market sentiment and behavioral factors
+- News and events impact
+- Hidden risks and opportunities
+- Future outlook and catalysts
+
+Format your response as a JSON object with the following structure:
+{
+    "analysis": {
+        "sentiment_summary": "Brief 1-2 sentence overall market sentiment and investor perception",
+        "key_factors": ["3-4 bullet points of non-obvious factors affecting price"],
+        "news_impact": ["2-3 bullet points of latest news and market reactions"],
+        "risks_opportunities": ["2-3 bullet points each of hidden risks and unique opportunities"],
+        "forward_outlook": "1-2 sentence forward-looking prediction with potential catalysts"
+    },
+    "sentiment_score": float between 0 and 1,
+    "technical_analysis": {
+        "trend_strength": "strong/weak/neutral",
+        "momentum_quality": "improving/deteriorating/stable",
+        "volatility_pattern": "increasing/decreasing/stable"
+    },
+    "market_analysis": {
+        "sector_sentiment": "positive/negative/neutral",
+        "peer_comparison": "outperforming/underperforming/in-line",
+        "institutional_interest": "high/moderate/low"
+    }
+}"""
 
         user_message = f"""Analyze the following company:
         Company: {stock_data.get('company_name', '')}
