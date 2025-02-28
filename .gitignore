@@ -10,7 +10,9 @@ app.log
 uv.lock
 
 # Virtual environments
-venv
+.venv
 
 .env
 **/project_state.json*
+
+
