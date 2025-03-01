@@ -90,19 +90,28 @@ async def clear_holdings(portfolio_service: PortfolioService = Depends(get_portf
 @router.post("/holdings/import", response_model=List[Holding])
 async def import_holdings(
     file: UploadFile = File(...),
+    asset_type: str = Form("stock"),
     portfolio_service: PortfolioService = Depends(get_portfolio_service)
 ):
     """Import holdings from CSV file"""
     try:
+        # Validate asset_type
+        valid_asset_types = ["stock", "crypto", "mutual_fund"]
+        if asset_type not in valid_asset_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid asset type. Must be one of: {', '.join(valid_asset_types)}"
+            )
+            
         # Read the file content
         content = await file.read()
         csv_content = content.decode("utf-8")
         
-        # Import holdings from CSV
-        holdings = await portfolio_service.import_holdings_from_csv(csv_content)
+        # Import holdings from CSV with asset type
+        holdings = await portfolio_service.import_holdings_from_csv(csv_content, asset_type)
         return holdings
     except Exception as e:
-        logger.error(f"Error importing holdings: {e}")
+        logger.error(f"Error importing {asset_type} holdings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/holdings/enriched", response_model=List[EnrichedHolding])

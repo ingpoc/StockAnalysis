@@ -7,6 +7,7 @@ from src.api.endpoints import (
     analysis_router,
     ai_insights_router
 )
+from src.routers.scraper import router as scraper_router
 
 # Create main API router
 router = APIRouter()
@@ -25,6 +26,9 @@ router.include_router(analysis_router, prefix="/analysis", tags=["analysis"])
 # AI insights routes
 router.include_router(ai_insights_router, prefix="/ai_insights", tags=["ai"])
 
+# Include the scraper router
+router.include_router(scraper_router, tags=["scraper"])
+
 # Endpoint URL structure:
 # /portfolio/holdings - Portfolio management
 # /market-data - Market overview data
@@ -34,6 +38,9 @@ router.include_router(ai_insights_router, prefix="/ai_insights", tags=["ai"])
 # /stock/{symbol}/refresh-analysis - Generate new analysis
 # /analysis/{analysis_id} - Get specific analysis content
 # /ai_insights/* - Additional AI insight endpoints
+# /scraper/scrape - Scrape financial data from MoneyControl
+# /scraper/companies - Get all companies' financial data
+# /scraper/company/{company_name} - Get financial data for a specific company
 
 # Add other routers as needed
 # router.include_router(market_router, prefix="/market-data", tags=["market"])

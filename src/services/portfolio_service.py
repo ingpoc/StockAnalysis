@@ -87,14 +87,14 @@ class PortfolioService:
             logger.error(f"Error clearing holdings: {e}")
             raise
 
-    async def import_holdings_from_csv(self, csv_content: str) -> List[Holding]:
+    async def import_holdings_from_csv(self, csv_content: str, asset_type: str = "stock") -> List[Holding]:
         """Import holdings from CSV content"""
         db = await get_database()
         holdings = []
         
         try:
-            # First clear existing holdings
-            await self.clear_holdings()
+            # First clear existing holdings of the specified asset type
+            await db[self.collection_name].delete_many({"asset_type": asset_type})
             
             # Parse CSV content
             csv_file = io.StringIO(csv_content)
@@ -102,23 +102,72 @@ class PortfolioService:
             
             for row in csv_reader:
                 # Skip empty rows
-                if not row.get('Instrument'):
+                if not row or not any(row.values()):
                     continue
                     
-                # Convert row data to Holding model
+                # Convert row data to Holding model based on asset type
                 try:
-                    symbol = row.get('Instrument', '').strip().replace('"', '')
-                    quantity = int(float(row.get('Qty.', 0)))
-                    avg_price = float(row.get('Avg. cost', 0))
-                    
-                    # Create holding with available data
-                    holding = Holding(
-                        symbol=symbol,
-                        company_name=symbol,  # Use symbol as company name if not available
-                        quantity=quantity,
-                        average_price=avg_price,
-                        notes=f"Imported from CSV on {datetime.now().strftime('%Y-%m-%d')}"
-                    )
+                    if asset_type == "stock":
+                        # Handle stock CSV format (Zerodha)
+                        symbol = row.get('Instrument', '').strip().replace('"', '')
+                        if not symbol:
+                            continue
+                            
+                        quantity = int(float(row.get('Qty.', 0)))
+                        avg_price = float(row.get('Avg. cost', 0).replace(',', '').replace('₹', '').replace('$', '').strip())
+                        
+                        # Create holding with available data
+                        holding = Holding(
+                            symbol=symbol,
+                            company_name=symbol,  # Use symbol as company name if not available
+                            quantity=quantity,
+                            average_price=avg_price,
+                            asset_type="stock",
+                            notes=f"Imported from CSV on {datetime.now().strftime('%Y-%m-%d')}"
+                        )
+                    elif asset_type == "crypto":
+                        # Handle crypto CSV format
+                        symbol = row.get('Coin', '').strip()
+                        if not symbol:
+                            continue
+                            
+                        quantity = float(row.get('Quantity', 0))
+                        avg_price = float(row.get('Avg. Buy Price', 0).replace(',', '').replace('₹', '').replace('$', '').strip())
+                        
+                        # Create holding with available data
+                        holding = Holding(
+                            symbol=symbol,
+                            company_name=symbol,  # Use symbol as company name
+                            quantity=quantity,
+                            average_price=avg_price,
+                            asset_type="crypto",
+                            notes=f"Imported from CSV on {datetime.now().strftime('%Y-%m-%d')}"
+                        )
+                    elif asset_type == "mutual_fund":
+                        # Handle mutual fund CSV format
+                        scheme_name = row.get('Scheme Name', '').strip()
+                        if not scheme_name:
+                            continue
+                            
+                        folio_number = row.get('Folio No.', '').strip()
+                        units = float(row.get('Units', 0))
+                        nav = float(row.get('Avg. NAV', 0).replace(',', '').replace('₹', '').replace('$', '').strip())
+                        
+                        # Create holding with available data
+                        holding_dict = {
+                            "symbol": scheme_name,
+                            "company_name": scheme_name,
+                            "quantity": units,
+                            "average_price": nav,
+                            "asset_type": "mutual_fund",
+                            "folio_number": folio_number,
+                            "notes": f"Imported from CSV on {datetime.now().strftime('%Y-%m-%d')}"
+                        }
+                        holding = Holding(**holding_dict)
+                    else:
+                        # Unsupported asset type
+                        logger.warning(f"Unsupported asset type: {asset_type}")
+                        continue
                     
                     # Insert into database
                     result = await db[self.collection_name].insert_one(

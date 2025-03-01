@@ -244,6 +244,8 @@ class Holding(BaseModel):
     purchase_date: Optional[datetime] = None
     notes: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
+    asset_type: Optional[str] = "stock"  # 'stock', 'crypto', or 'mutual_fund'
+    folio_number: Optional[str] = None  # For mutual funds
 
     class Config:
         populate_by_name = True
