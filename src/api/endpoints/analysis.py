@@ -1,33 +1,14 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from datetime import datetime
-from src.models.schemas import MarketOverview, StockResponse, AIAnalysis
-from src.services.market_service import MarketService
 from src.services.ai_service import AIService
 import logging
 
 router = APIRouter()
-market_service = MarketService()
 ai_service = AIService()
 logger = logging.getLogger(__name__)
 
-@router.get("/market-data", response_model=MarketOverview)
-async def get_market_data(quarter: Optional[str] = None, force_refresh: bool = False):
-    """Get market overview data with optional force refresh"""
-    try:
-        return await market_service.get_market_data(quarter, force_refresh)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/stock/{symbol}", response_model=StockResponse)
-async def get_stock_details(symbol: str):
-    """Get detailed stock information"""
-    try:
-        return await market_service.get_stock_details(symbol)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/stock/{symbol}/analysis-history")
+@router.get("/{symbol}/analysis-history")
 async def get_analysis_history(symbol: str):
     """Get historical AI analyses for a stock"""
     try:
@@ -45,7 +26,7 @@ async def get_analysis_history(symbol: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/analysis/{analysis_id}")
+@router.get("/{analysis_id}")
 async def get_analysis_content(analysis_id: str):
     """Get specific AI analysis content"""
     try:
@@ -56,7 +37,7 @@ async def get_analysis_content(analysis_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/stock/{symbol}/refresh-analysis")
+@router.post("/{symbol}/refresh-analysis")
 async def refresh_analysis(symbol: str):
     """Generate new AI analysis for a stock"""
     try:
@@ -77,15 +58,6 @@ async def refresh_analysis(symbol: str):
             detail=f"Failed to generate analysis: {str(e)}"
         )
 
-@router.get("/quarters")
-async def get_quarters():
-    """Get list of available quarters"""
-    try:
-        quarters = await market_service.get_available_quarters()
-        return {"quarters": quarters}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 def format_analysis_timestamp(timestamp: datetime) -> str:
     """Format timestamp for display in dropdown"""
     now = datetime.now()
@@ -94,4 +66,4 @@ def format_analysis_timestamp(timestamp: datetime) -> str:
     elif timestamp.date() == now.date():
         return f"Yesterday {timestamp.strftime('%H:%M')}"
     else:
-        return timestamp.strftime('%d %B %Y')
+        return timestamp.strftime('%d %B %Y') 

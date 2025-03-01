@@ -1,0 +1,157 @@
+---
+description: AI Guidelines
+globs: src/**/*.py, .env, requirements.txt, README.md
+alwaysApply: false
+---
+---
+description: AI Guidelines
+globs: src/**/*.py, .env, requirements.txt, README.md
+alwaysApply: false
+---
+
+# General Development Guidelines for StockAnalysis
+
+## 1. Project Structure
+```markdown
+src/
+├── api/endpoints/    # All API endpoints
+├── services/        # Business logic
+├── models/          # Data models & schemas
+├── utils/          # Utility functions
+└── config.py       # Configuration settings
+```
+
+## 2. Code Organization Rules
+- ✓ Keep endpoints in dedicated files
+- ✓ Separate business logic in services
+- ✓ Define models before implementation
+- ✓ Centralize utility functions
+- ✓ Maintain clean imports
+
+## 2a. Import Path Conventions
+- ✓ Always use absolute imports from the root package
+- ✓ Import format for internal packages: `from src.{module} import {name}`
+- ✓ Define __init__.py in all packages with proper exports
+- ✓ Router imports example:
+  ```python
+  # In src/api/__init__.py
+  from fastapi import APIRouter
+  
+  api_router = APIRouter(prefix="/api/v1")
+  
+  # In src/api/endpoints/module.py
+  from src.api import api_router
+  ```
+- ✓ Never use relative imports (.module) unless in the same package
+
+## 3. Database Collections
+```markdown
+stock_data (Database)
+├── ai_analysis           # AI Insights storage
+├── detailed_financials   # Market data by quarter
+├── holdings             # User portfolio data
+├── ipo_data             # IPO information
+└── settings             # Application settings
+```
+
+## 4. Performance Requirements
+- ✓ Response time < 500ms
+- ✓ Use connection pooling
+- ✓ Implement proper indexing
+- ✓ Cache frequent data
+- ✓ Use async operations
+
+## 5. Error Handling Standards
+```python
+# Always use custom exceptions
+class CustomException(Exception):
+    pass
+
+# Proper error responses
+{
+    "status_code": 400,
+    "detail": "Error description",
+    "timestamp": "2024-02-28T12:00:00Z"
+}
+```
+
+## 5a. API Response Status Codes
+- ✓ GET success: always return 200 OK
+- ✓ POST success: always return 201 Created
+- ✓ PUT/PATCH success: always return 200 OK
+- ✓ DELETE success: always return 200 OK
+- ✓ Validation errors: always return 422 Unprocessable Entity
+- ✓ Not found: always return 404 Not Found
+- ✓ Server errors: always return 500 Internal Server Error
+
+## 6. Documentation Requirements
+- ✓ Document all functions
+- ✓ Maintain API documentation
+- ✓ Update README.md
+- ✓ Comment complex logic
+- ✓ Keep .env.example updated
+
+# 7. API Implementation Rules
+- ✓ Each endpoint module must include this at the top:
+  ```python
+  from src.api import api_router
+  ```
+- ✓ Register endpoints with appropriate tags:
+  ```python
+  @api_router.get("/path", tags=["category"])
+  ```
+- ✓ All endpoints must be imported in main.py
+- ✓ Sample router registration in main.py:
+  ```python
+  # Import all endpoint modules to register routes
+  from src.api.endpoints import portfolio, market_data, stock_data
+  
+  # Include router in app
+  app.include_router(api_router)
+  ```
+- ✓ For endpoints that need to be accessed via multiple URL paths, include the router multiple times with different prefixes:
+  ```python
+  # Example for analysis endpoints that need both /stock/{symbol}/analysis-history
+  # and /analysis/{analysis_id} paths
+  router.include_router(analysis_router, prefix="/stock", tags=["analysis"])
+  router.include_router(analysis_router, prefix="/analysis", tags=["analysis"])
+  ```
+
+## 8. Testing Requirements
+- ✓ Unit tests for all services (85% coverage)
+- ✓ API endpoint tests (90% coverage)
+- ✓ Utilities tests (80% coverage)
+- ✓ Mock external dependencies
+- ✓ Test error handling scenarios
+
+## 9. Development Process
+- ✓ Check documentation first
+- ✓ Search codebase for context
+- ✓ Verify dependencies
+- ✓ Test thoroughly
+- ✓ Review before commit
+
+## 10. Third-Party Integration
+- ✓ Check official docs
+- ✓ Review GitHub issues
+- ✓ Test edge cases
+- ✓ Handle API failures
+- ✓ Monitor usage limits
+
+---
+
+**Important Reminders**:
+1. Never commit sensitive data
+2. Always use async operations
+3. Implement proper logging
+4. Handle errors gracefully
+5. Keep documentation updated
+
+**Before Making Changes**:
+1. Understand component hierarchy
+2. Check existing implementations
+3. Verify type definitions
+4. Review related files
+5. Test all scenarios
+
+These guidelines ensure consistent, maintainable, and reliable code across the StockAnalysis application.

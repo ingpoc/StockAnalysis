@@ -234,3 +234,24 @@ class AIAnalysisResponse(BaseModel):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         }
+
+class Holding(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    symbol: str
+    company_name: str
+    quantity: int
+    average_price: float
+    purchase_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+    class Config:
+        populate_by_name = True
+        json_encoders = {
+            ObjectId: str,
+            datetime: lambda dt: dt.isoformat()
+        }
+        arbitrary_types_allowed = True
+
+class HoldingsList(BaseModel):
+    holdings: List[Holding] = Field(default_factory=list)

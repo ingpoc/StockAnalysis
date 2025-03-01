@@ -1,0 +1,118 @@
+---
+description: AI Analysis Development Guidelines
+globs: src/**/ai*.py, src/**/analysis*.py, src/services/insights*.py, src/api/endpoints/analysis*.py
+alwaysApply: false
+---
+---
+description: Rule for AI Analysis and AI Insights for a stock
+globs: src/**/ai*.py, src/**/analysis*.py, src/services/insights*.py, src/api/endpoints/analysis*.py
+alwaysApply: false
+---
+
+# AI Analysis Development Guidelines
+
+## Core Development Points
+
+### 1. AI Model Integration
+- ✓ Use XAI's Grok model as primary engine
+- ✓ Configure API credentials properly
+- ✓ Handle model versioning
+- ✓ Implement fallback mechanisms
+
+### 2. Environment Setup
+- ✓ Required XAI_API_KEY in .env
+- ✓ Required XAI_API_URL in .env
+- ✓ Configure timeout settings
+- ✓ Set up proper SSL verification
+
+### 3. Cache Management
+- ✓ Cache AI responses (TTL: 6 hours)
+- ✓ Implement force refresh option
+- ✓ Handle cache invalidation
+- ✓ Store response metadata
+
+### 4. Error Handling
+- ✓ Handle API timeouts
+- ✓ Manage rate limits
+- ✓ Log failed requests
+- ✓ Implement retry logic
+
+### 5. Response Processing
+- ✓ Validate AI response format
+- ✓ Parse JSON responses correctly
+- ✓ Handle malformed responses
+- ✓ Maintain response structure
+
+### 6. Analysis Storage
+- ✓ Use `ai_analysis` collection
+- ✓ Store analysis metadata
+- ✓ Track analysis versions
+- ✓ Maintain historical data
+
+
+### 7. API Implementation
+```markdown
+GET /analysis/{analysis_id}
+- Validate analysis ID
+- Return cached if available
+- Handle missing analysis
+- Include metadata
+
+GET /stock/{symbol}/analysis-history
+- Validate timeframe parameter
+- Handle async processing
+- Return structured insights
+- Include sentiment scores
+
+POST /stock/{symbol}/refresh-analysis
+- Aggregate multiple analyses
+- Cache overall sentiment
+- Update periodically
+- Handle partial data
+```
+
+**Important API Routing Notes:**
+- Analysis endpoints require dual routing in `src/api/__init__.py`:
+  ```python
+  # Include analysis router twice - once with /stock prefix for analysis-history
+  # and refresh-analysis, and once with /analysis prefix for retrieving by ID
+  router.include_router(analysis_router, prefix="/stock", tags=["analysis"])
+  router.include_router(analysis_router, prefix="/analysis", tags=["analysis"])
+  ```
+
+### 9. Data Structure
+```json
+{
+    "analysis": {
+        "sentiment_summary": "string",
+        "key_factors": ["string"],
+        "news_impact": ["string"],
+        "risks_opportunities": {
+            "risks": ["string"],
+            "opportunities": ["string"]
+        },
+        "forward_outlook": "string"
+    },
+    "sentiment": {
+        "score": "number",
+        "label": "string"
+    },
+    "timestamp": "string (ISO date)"
+}
+```
+
+### 10. Monitoring
+- ✓ Track API usage
+- ✓ Monitor response quality
+- ✓ Log analysis metrics
+- ✓ Alert on failures
+
+---
+
+**Note**: These guidelines ensure reliable AI analysis integration. Always test AI responses thoroughly and maintain consistent error handling.
+
+**Important Considerations**:
+- Keep prompts consistent and well-structured
+- Validate all AI-generated content
+- Implement proper error recovery
+- Monitor API costs and usage

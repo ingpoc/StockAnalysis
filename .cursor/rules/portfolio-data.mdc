@@ -1,0 +1,94 @@
+---
+description: Portfolio Development Guidelines
+globs: src/**/portfolio*.py, src/models/holding*.py, src/api/endpoints/portfolio*.py, src/services/portfolio*.
+alwaysApply: false
+---
+---
+description: Portfolio Development Guidelines
+globs: src/**/portfolio*.py, src/models/holding*.py, src/api/endpoints/portfolio*.py, src/services/portfolio*.py
+alwaysApply: false
+---
+
+## Core Development Points
+
+### 1. Data Validation
+- ✓ Validate all input numbers (quantity, price)
+- ✓ Check for negative values
+- ✓ Verify stock symbols exist
+- ✓ Ensure calculations are accurate (P&L, current value)
+
+### 2. Error Handling
+- ✓ Handle missing price data
+- ✓ Manage API failures gracefully
+- ✓ Log sync errors
+- ✓ Provide clear error messages to users
+
+### 3. Performance
+- ✓ Batch process portfolio updates
+- ✓ Cache frequently accessed holdings
+- ✓ Use proper database indexing
+- ✓ Implement pagination for large portfolios
+
+### 4. Data Consistency
+- ✓ Update all related fields together
+- ✓ Maintain calculation accuracy
+- ✓ Keep timestamps updated
+- ✓ Ensure totals match individual holdings
+
+### 5. Asset Type Support
+- ✓ Use flexible schema for different assets
+- ✓ Maintain consistent field naming
+- ✓ Handle asset-specific calculations
+- ✓ Support mixed portfolios
+
+### 6. Real-time Updates
+- ✓ Update LTP (Last Traded Price) regularly
+- ✓ Recalculate P&L on price changes
+- ✓ Update portfolio totals
+- ✓ Track change percentages
+
+### 7. Historical Tracking
+- ✓ Track purchase history
+- ✓ Store daily portfolio values
+- ✓ Maintain transaction logs
+- ✓ Record asset allocation changes
+
+### 8. Security
+- ✓ Validate user permissions
+- ✓ Secure sensitive data
+- ✓ Log all modifications
+- ✓ Implement rate limiting
+
+### 9. Backup & Recovery
+- ✓ Keep temporary backups
+- ✓ Enable data restoration
+- ✓ Track sync status
+- ✓ Handle partial updates
+
+### 10. API Design
+- ✓ Clear endpoint structure
+- ✓ Consistent response format
+- ✓ Support filtering options
+- ✓ Include summary data
+
+### 11. Update Operations
+- ✓ PUT operations require ALL fields to be present (complete object replacement)
+- ✓ PATCH operations allow partial updates (only specified fields)
+- ✓ Example PUT implementation:
+  ```python
+  @router.put("/{id}", response_model=HoldingResponse)
+  async def update_holding(id: str, holding: HoldingCreate):
+      # All fields required in HoldingCreate
+      return await service.update_holding(id, holding)
+  ```
+- ✓ Example PATCH implementation:
+  ```python
+  @router.patch("/{id}", response_model=HoldingResponse)
+  async def update_holding_partial(id: str, holding: HoldingUpdate):
+      # HoldingUpdate has all fields optional
+      return await service.update_holding_partial(id, holding)
+  ```
+
+---
+
+**Note**: These guidelines ensure reliable and maintainable portfolio management functionality. Developers should refer to these points during implementation and code review processes.

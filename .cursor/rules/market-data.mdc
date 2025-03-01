@@ -1,0 +1,104 @@
+---
+description: Market Data Development Guidelines
+globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py, src/models/market*.py
+alwaysApply: false
+---
+---
+description: Market Data Development Guidelines
+globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py, src/models/market*.py
+alwaysApply: false
+---
+
+## Core Development Points
+
+### 1. Quarter Data Validation
+- ✓ Validate quarter format (e.g., "2023-Q4")
+- ✓ Check quarter sequence
+- ✓ Verify quarter exists
+- ✓ Handle invalid formats
+
+### 2. Required Quarterly Metrics
+- ✓ Net profit growth
+- ✓ Revenue growth
+- ✓ Result date
+- ✓ Estimates
+- ✓ Fundamental insights
+
+### 3. Cache Management
+- ✓ Cache TTL: 1 hour (3600 seconds)
+- ✓ Implement force_refresh parameter
+- ✓ Clear cache on updates
+- ✓ Handle cache misses
+
+### 4. Database Operations
+- ✓ Use `detailed_financials` collection
+- ✓ Index on quarter field
+- ✓ Maintain historical data
+- ✓ Handle bulk operations
+
+### 5. Default Behaviors
+- ✓ Default to latest quarter
+- ✓ Sort by net profit growth
+- ✓ Handle empty quarters
+- ✓ Validate data completeness
+
+### 6. Data Formatting
+- ✓ Use "--" or "NA" for missing data
+- ✓ Never use null values
+- ✓ Format percentages consistently
+- ✓ Standardize date formats (ISO 8601)
+
+### 7. Update Management
+- ✓ Track last update timestamp
+- ✓ Validate before updates
+- ✓ Log all modifications
+- ✓ Maintain update history
+
+### 8. Performance Optimization
+- ✓ Batch process updates
+- ✓ Implement pagination
+- ✓ Cache frequent queries
+- ✓ Use async operations
+
+### 9. Market Overview Data
+- ✓ Top performers (by profit growth)
+- ✓ Worst performers (by loss)
+- ✓ Latest results (by date)
+- ✓ Overall market metrics
+
+### 10. API Implementation
+```markdown
+GET /market-data
+- Handle quarter parameter
+- Implement force_refresh
+- Return sorted results
+- Include metadata
+
+GET /quarters
+- Return available quarters
+- Sort in descending order
+- Include quarter metadata
+- Handle empty states
+```
+
+---
+
+**Note**: These guidelines ensure consistent market data handling. Developers should implement proper error handling and logging for all operations.
+
+**Response Format Example**:
+```json
+{
+    "quarter": "2023-Q4",
+    "top_performers": [...],
+    "worst_performers": [...],
+    "latest_results": [...],
+    "last_updated": "2024-02-28T12:00:00Z",
+    "metadata": {
+        "total_companies": 500,
+        "updated_companies": 480,
+        "pending_updates": 20
+    }
+}
+```
+```
+

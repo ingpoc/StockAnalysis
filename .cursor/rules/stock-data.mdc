@@ -1,0 +1,94 @@
+---
+description: Stock Data Development Guidelines
+globs: src/**/stock*.py, src/models/stock_*.py, src/api/endpoints/stock*.py, src/services/stock*.py
+alwaysApply: false
+---
+---
+description: Stock Data Development Guidelines
+globs: src/**/stock*.py, src/models/stock_*.py, src/api/endpoints/stock*.py, src/services/stock*.py
+alwaysApply: false
+---
+
+## Core Development Points
+
+### 1. Data Structure Requirements
+- ✓ Company name (required)
+- ✓ Symbol (unique identifier)
+- ✓ Financial metrics (quarterly)
+- ✓ Latest quarter data
+- ✓ Last update timestamp
+
+### 2. Financial Metrics Handling
+- ✓ Market cap formatting (K, M, B)
+- ✓ Face value & Book value precision
+- ✓ TTM EPS & PE calculations
+- ✓ Piotroski score validation (0-9)
+- ✓ Dividend yield with % symbol
+
+### 3. Cache Implementation
+- ✓ Stock details: 6 hour TTL
+- ✓ Analysis history: 24 hour TTL
+- ✓ Enable force refresh option
+- ✓ Cache invalidation on updates
+
+### 4. Data Validation Rules
+- ✓ Uppercase symbol validation
+- ✓ Decimal precision for financials
+- ✓ Percentage values with % symbol
+- ✓ Mark missing data as "--"
+
+### 5. Error Management
+- ✓ Handle non-existent stocks
+- ✓ Validate symbol format
+- ✓ Manage provider outages
+- ✓ Handle suspended/delisted cases
+
+### 6. Analysis Integration
+- ✓ Store historical analyses
+- ✓ Track analysis timestamps
+- ✓ Include AI insights
+- ✓ Update recommendations
+
+### 7. Database Operations
+- ✓ Use `detailed_financials` collection
+- ✓ Index on 'symbol' field
+- ✓ Regular data backups
+- ✓ Maintain data consistency
+
+### 8. Performance Optimization
+- ✓ Load details within 100ms
+- ✓ Complete analysis within 500ms
+- ✓ Implement proper caching
+- ✓ Use async operations
+
+### 9. Update Management
+- ✓ Real-time price updates
+- ✓ Quarterly financial updates
+- ✓ Log all modifications
+- ✓ Track data sources
+
+### 10. API Implementation
+```markdown
+Endpoints:
+GET /stock/{symbol}
+- Implement proper validation
+- Include all required metrics
+- Handle errors gracefully
+- Return consistent format
+
+GET /stock/{symbol}/analysis-history
+- Implement pagination
+- Sort by timestamp
+- Include analysis metadata
+- Enable filtering
+
+POST /stock/{symbol}/refresh-analysis
+- Validate input
+- Handle async processing
+- Return job status
+- Implement retry logic
+```
+
+---
+
+**Note**: These guidelines ensure reliable stock data management. Follow these points during implementation and testing phases.

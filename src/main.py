@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.endpoints import router
+from src.api import router
 from src.utils.database import connect_to_mongodb, close_mongodb_connection
 from src.config import settings
 import logging
@@ -14,7 +14,7 @@ app = FastAPI(title="Stock Analysis API")
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

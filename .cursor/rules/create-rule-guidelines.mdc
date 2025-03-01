@@ -1,0 +1,45 @@
+---
+description: Guidelines to how rules should be created or optimized
+globs: .cursor/rules/*.mdc
+alwaysApply: false
+---
+## Rule: Generate Rules from Project Analysis
+
+### Description
+This rule guides the AI in generating or updating the project's rules based on the analysis of the project's code and documentation. Based on what was learnt and implemented and what worked for the AI this rule should help optmize the other rules and documents in src/docs/api
+
+### Instructions
+1. **Determine the Programming Language and Version:**
+   - Identify the primary programming language used in the project.
+   - Note the specific version or dialect if applicable.
+
+2. **Identify Frameworks and Libraries:**
+   - List all major frameworks and libraries used in the project.
+   - Note their versions and any specific configurations.
+
+3. **Analyze Project Structure and Organization:**
+   - Examine the directory structure and file organization.
+   - Identify any patterns or conventions used for organizing code.
+
+4. **Examine Coding Style and Conventions:**
+   - Look for consistent naming conventions, indentation styles, and formatting.
+   - Check for any specific coding practices or patterns.
+
+5. **Review Documentation and Comments:**
+   - Look for any documentation files or comments that specify coding standards or best practices.
+   - Note any guidelines or rules mentioned in these sources.
+
+6. **Create or Update Rules:**
+   - Based on the above analysis, create or update rules that cover:
+     - Project structure and organization.
+     - Code organization and modularity.
+     - Dependency management.
+     - Testing strategies.
+     - Code quality and linting.
+     - Documentation standards.
+     - Development tools and best practices.
+     - Specific guidelines for the identified language and frameworks.
+
+7. **Format the Rules:**
+   - Ensure that the rules are formatted correctly in the .mdc format.
+   - Organize the rules into appropriate categories and sections.
