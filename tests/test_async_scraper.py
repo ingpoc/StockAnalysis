@@ -31,11 +31,11 @@ async def test_async_scraper():
     # Set up MongoDB connection
     mongo_uri = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
     client = AsyncIOMotorClient(mongo_uri)
-    db = client.stock_analysis
-    collection = db.test_financials
+    db = client.stock_data
+    collection = db.detailed_financials
     
     # URL for latest results
-    url = "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php"
+    url = "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy"
     logger.info(f"Testing async scraper with URL: {url}")
     
     try:

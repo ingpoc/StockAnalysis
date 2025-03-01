@@ -28,11 +28,11 @@ async def test_scraper():
     """
     # URLs for different result types
     urls = {
-        "Latest Results": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php",
-        "Best Performer": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php?tab=BP",
-        "Worst Performer": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php?tab=WP",
-        "Positive Turnaround": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php?tab=PT",
-        "Negative Turnaround": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php?tab=NT"
+        "Latest Results": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy",
+        "Best Performer": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=BP&subType=yoy",
+        "Worst Performer": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=WP&subType=yoy",
+        "Positive Turnaround": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=PT&subType=yoy",
+        "Negative Turnaround": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=NT&subType=yoy"
     }
     
     # Test with the Latest Results URL first
