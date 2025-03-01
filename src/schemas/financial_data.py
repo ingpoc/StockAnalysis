@@ -54,12 +54,22 @@ class CompanyFinancials(BaseModel):
 
 class ScrapeRequest(BaseModel):
     """Schema for scrape request parameters."""
-    url: str = Field(..., description="URL of the MoneyControl earnings page to scrape")
-    result_type: Optional[str] = Field(None, description="Type of results to scrape (LR, BP, WP, PT, NT)")
+    url: Optional[str] = Field(None, description="URL of the MoneyControl earnings page to scrape (optional)")
+    result_type: str = Field(..., description="Type of results to scrape (LR, BP, WP, PT, NT)")
 
 class ScrapeResponse(BaseModel):
     """Schema for scrape response."""
     success: bool
     message: str
     companies_scraped: int = 0
-    data: Optional[List[Dict[str, Any]]] = None 
+    data: Optional[List[Dict[str, Any]]] = None
+
+class RemoveQuarterRequest(BaseModel):
+    """Schema for remove quarter request parameters."""
+    quarter: str = Field(..., description="Quarter to remove (Q1, Q2, Q3, Q4)")
+
+class RemoveQuarterResponse(BaseModel):
+    """Schema for remove quarter response."""
+    success: bool
+    message: str
+    documents_updated: int = 0 

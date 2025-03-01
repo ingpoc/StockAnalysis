@@ -38,7 +38,13 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
     results = []
     
     try:
+        logger.info(f"Starting scraping process for URL: {url}")
         logger.info("Setting up WebDriver")
+        
+        # Get headless mode setting from environment
+        headless_value = os.getenv('HEADLESS', 'true').lower()
+        headless_mode = headless_value != "false"
+        
         driver = setup_webdriver()
         logger.info(f"WebDriver set up successfully")
         
@@ -59,23 +65,68 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
             
         # Wait for the page to load
         try:
-            # Wait for the first result card selector to be present
-            WebDriverWait(driver, 30).until(
+            # Wait for the first result card selector to be present with a longer timeout
+            logger.info("Waiting for result cards to load...")
+            WebDriverWait(driver, 60).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, 'li.rapidResCardWeb_gryCard__hQigs'))
             )   
             logger.info("Page loaded successfully")
         except TimeoutException:
-            logger.error("Timeout waiting for result cards to load")
-            return []
+            logger.warning("Timeout waiting for primary result cards selector. Trying alternative selectors...")
+            
+            # Try alternative selectors
+            try:
+                WebDriverWait(driver, 30).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, 'li.gryCard'))
+                )
+                logger.info("Page loaded with alternative selector 'li.gryCard'")
+            except TimeoutException:
+                try:
+                    WebDriverWait(driver, 30).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, 'div.card'))
+                    )
+                    logger.info("Page loaded with alternative selector 'div.card'")
+                except TimeoutException:
+                    logger.error("Timeout waiting for all result cards selectors. Saving page source for debugging.")
+                    # Save the page source for debugging
+                    with open("debug_timeout_page.html", "w", encoding="utf-8") as f:
+                        f.write(driver.page_source)
+                    logger.info("Saved page source to debug_timeout_page.html for debugging")
+                    return []
             
         # Scroll to load all content
+        logger.info("Scrolling page to load all content")
         scroll_page(driver)
         
         # Parse the page
+        logger.info("Parsing page content")
         page_source = driver.page_source
         soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Try multiple selectors to find result cards
         result_cards = soup.select('li.rapidResCardWeb_gryCard__hQigs')
+        
+        if not result_cards:
+            logger.warning("No result cards found with primary selector. Trying alternative selectors.")
+            # Try alternative selectors if the primary one doesn't work
+            result_cards = soup.select('li.gryCard')
+            if not result_cards:
+                result_cards = soup.select('div.card')
+                if not result_cards:
+                    # Try even more generic selectors
+                    result_cards = soup.select('li[class*="gryCard"]')
+                    if not result_cards:
+                        result_cards = soup.select('div[class*="card"]')
+        
         logger.info(f"Found {len(result_cards)} result cards to process")
+        
+        if len(result_cards) == 0:
+            logger.error("No result cards found on the page. Check if the page structure has changed.")
+            # Save the page source for debugging
+            with open("debug_page_source.html", "w", encoding="utf-8") as f:
+                f.write(page_source)
+            logger.info("Saved page source to debug_page_source.html for debugging")
+            return []
         
         # Extract the tab type from URL for logging
         tab_type = "Latest Results"  # Default
@@ -93,17 +144,26 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         logger.info(f"Scraping {tab_type} with {len(result_cards)} companies")
         
         # Process each company card
-        for card in result_cards:
-            # Process the card and store the data
-            company_data = process_result_card(card, driver, db_collection)
-            if company_data:
-                results.append(company_data)
+        for i, card in enumerate(result_cards):
+            try:
+                logger.info(f"Processing card {i+1} of {len(result_cards)}")
+                # Process the card and store the data
+                company_data = await process_result_card(card, driver, db_collection)
+                if company_data:
+                    results.append(company_data)
+                    logger.info(f"Successfully processed card {i+1}")
+                else:
+                    logger.info(f"Card {i+1} was skipped (already exists or error)")
+            except Exception as e:
+                logger.error(f"Error processing card {i+1}: {str(e)}")
+                # Continue with the next card
+                continue
         
         logger.info(f"Successfully scraped {len(results)} companies' financial data from {tab_type}")
         return results
         
-    except TimeoutException:
-        logger.error("Timeout waiting for page to load")
+    except TimeoutException as e:
+        logger.error(f"Timeout waiting for page to load: {str(e)}")
         return results
     except WebDriverException as e:
         logger.error(f"WebDriver error: {str(e)}")
@@ -113,8 +173,11 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         return results
     finally:
         if driver:
-            driver.quit()
-            logger.info("WebDriver closed")
+            try:
+                driver.quit()
+                logger.info("WebDriver closed")
+            except Exception as e:
+                logger.error(f"Error closing WebDriver: {str(e)}")
 
 def scroll_page(driver) -> None:
     """
@@ -123,14 +186,47 @@ def scroll_page(driver) -> None:
     Args:
         driver: Selenium WebDriver instance.
     """
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    while True:
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            break
-        last_height = new_height
+    try:
+        logger.info("Starting page scrolling to load dynamic content")
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        scroll_attempts = 0
+        max_scroll_attempts = 10  # Limit scrolling attempts to avoid infinite loops
+        
+        while scroll_attempts < max_scroll_attempts:
+            # Scroll down to bottom
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            
+            # Wait to load page
+            time.sleep(2)
+            
+            # Calculate new scroll height and compare with last scroll height
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            
+            if new_height == last_height:
+                # Try one more time to ensure content is fully loaded
+                time.sleep(1)
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+                final_height = driver.execute_script("return document.body.scrollHeight")
+                
+                if final_height == new_height:
+                    logger.info(f"Scrolling complete after {scroll_attempts + 1} attempts")
+                    break
+            
+            last_height = new_height
+            scroll_attempts += 1
+            logger.debug(f"Scroll attempt {scroll_attempts}/{max_scroll_attempts}")
+        
+        if scroll_attempts >= max_scroll_attempts:
+            logger.warning("Reached maximum scroll attempts. Some content might not be loaded.")
+            
+        # Scroll back to top for better processing
+        driver.execute_script("window.scrollTo(0, 0);")
+        time.sleep(1)
+        
+    except Exception as e:
+        logger.error(f"Error during page scrolling: {str(e)}")
+        # Continue with whatever content was loaded
 
 async def scrape_stock_symbol_mappings() -> Dict[str, str]:
     """

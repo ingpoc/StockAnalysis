@@ -4,91 +4,116 @@ globs: src/**/stock*.py, src/models/stock_*.py, src/api/endpoints/stock*.py, src
 alwaysApply: false
 ---
 ---
-description: Stock Data Development Guidelines
-globs: src/**/stock*.py, src/models/stock_*.py, src/api/endpoints/stock*.py, src/services/stock*.py
+description: Stock Data Structure and Processing
+globs: src/models/stock.py, src/services/stock_service.py, src/api/endpoints/stock.py
 alwaysApply: false
 ---
 
-## Core Development Points
+# Stock Data Structure and Processing
 
-### 1. Data Structure Requirements
-- ✓ Company name (required)
-- ✓ Symbol (unique identifier)
-- ✓ Financial metrics (quarterly)
-- ✓ Latest quarter data
-- ✓ Last update timestamp
+## 1. Data Model
+The stock data model represents financial information for a specific stock symbol.
 
-### 2. Financial Metrics Handling
-- ✓ Market cap formatting (K, M, B)
-- ✓ Face value & Book value precision
-- ✓ TTM EPS & PE calculations
-- ✓ Piotroski score validation (0-9)
-- ✓ Dividend yield with % symbol
-
-### 3. Cache Implementation
-- ✓ Stock details: 6 hour TTL
-- ✓ Analysis history: 24 hour TTL
-- ✓ Enable force refresh option
-- ✓ Cache invalidation on updates
-
-### 4. Data Validation Rules
-- ✓ Uppercase symbol validation
-- ✓ Decimal precision for financials
-- ✓ Percentage values with % symbol
-- ✓ Mark missing data as "--"
-
-### 5. Error Management
-- ✓ Handle non-existent stocks
-- ✓ Validate symbol format
-- ✓ Manage provider outages
-- ✓ Handle suspended/delisted cases
-
-### 6. Analysis Integration
-- ✓ Store historical analyses
-- ✓ Track analysis timestamps
-- ✓ Include AI insights
-- ✓ Update recommendations
-
-### 7. Database Operations
-- ✓ Use `detailed_financials` collection
-- ✓ Index on 'symbol' field
-- ✓ Regular data backups
-- ✓ Maintain data consistency
-
-### 8. Performance Optimization
-- ✓ Load details within 100ms
-- ✓ Complete analysis within 500ms
-- ✓ Implement proper caching
-- ✓ Use async operations
-
-### 9. Update Management
-- ✓ Real-time price updates
-- ✓ Quarterly financial updates
-- ✓ Log all modifications
-- ✓ Track data sources
-
-### 10. API Implementation
-```markdown
-Endpoints:
-GET /stock/{symbol}
-- Implement proper validation
-- Include all required metrics
-- Handle errors gracefully
-- Return consistent format
-
-GET /stock/{symbol}/analysis-history
-- Implement pagination
-- Sort by timestamp
-- Include analysis metadata
-- Enable filtering
-
-POST /stock/{symbol}/refresh-analysis
-- Validate input
-- Handle async processing
-- Return job status
-- Implement retry logic
+```python
+class Stock(BaseModel):
+    symbol: str
+    company_name: str
+    sector: str
+    industry: str
+    market_cap: float
+    current_price: float
+    financial_metrics: List[FinancialMetric]
+    analysis: Optional[List[Analysis]] = None
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "company_name": "Apple Inc.",
+                "sector": "Technology",
+                "industry": "Consumer Electronics",
+                "market_cap": 2500000000000,
+                "current_price": 150.25,
+                "financial_metrics": [...]
+            }
+        }
 ```
 
----
+## 2. Financial Metrics
+Financial metrics are stored as a list of quarterly results.
 
-**Note**: These guidelines ensure reliable stock data management. Follow these points during implementation and testing phases.
+```python
+class FinancialMetric(BaseModel):
+    quarter: str  # Format: "Q1 2023"
+    revenue: float
+    net_profit: float
+    eps: float
+    pe_ratio: float
+    debt_to_equity: float
+    result_date: datetime
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "quarter": "Q1 2023",
+                "revenue": 97278000000,
+                "net_profit": 24160000000,
+                "eps": 1.52,
+                "pe_ratio": 24.5,
+                "debt_to_equity": 1.2,
+                "result_date": "2023-01-25T00:00:00Z"
+            }
+        }
+```
+
+## 3. Stock Service
+The stock service handles operations related to stock data.
+
+```python
+class StockService:
+    def __init__(self, db: Database):
+        self.db = db
+        self.collection = db.stocks
+    
+    async def get_stock_by_symbol(self, symbol: str) -> Optional[Stock]:
+        # Implementation
+        
+    async def update_stock_data(self, stock: Stock) -> bool:
+        # Implementation
+        
+    async def get_stocks_by_sector(self, sector: str) -> List[Stock]:
+        # Implementation
+```
+
+## 4. API Endpoints
+Stock data is exposed through the following endpoints:
+
+- `GET /api/v1/stock/{symbol}` - Get stock details
+- `GET /api/v1/stock/{symbol}/metrics` - Get financial metrics
+- `GET /api/v1/stock/{symbol}/analysis` - Get analysis
+- `GET /api/v1/stocks/sector/{sector}` - Get stocks by sector
+
+## 5. File Organization
+- ✓ Stock models should be defined in `src/models/stock.py`
+- ✓ Stock services should be implemented in `src/services/stock_service.py`
+- ✓ Stock API endpoints should be defined in `src/api/endpoints/stock.py`
+- ✓ Stock data tests should be placed in `tests/test_stock.py`
+- ✓ Stock data utilities should be placed in `src/utils/stock_utils.py`
+- ✓ Stock data scripts should be placed in `tools/scripts/`
+
+## 6. Data Processing Rules
+- ✓ Always validate stock symbols against a known list
+- ✓ Format financial values with appropriate precision
+- ✓ Sort financial metrics by date (newest first)
+- ✓ Handle missing metrics gracefully
+- ✓ Cache frequently accessed stock data
+- ✓ Update stock data at regular intervals
+
+## 7. Error Handling
+- ✓ Return 404 for unknown stock symbols
+- ✓ Handle API rate limits for external data sources
+- ✓ Log all data processing errors
+- ✓ Provide meaningful error messages
+- ✓ Implement retry logic for transient failures
+
+These guidelines ensure consistent handling of stock data across the application.

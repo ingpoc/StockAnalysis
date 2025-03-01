@@ -4,101 +4,131 @@ globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py,
 alwaysApply: false
 ---
 ---
-description: Market Data Development Guidelines
-globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py, src/models/market*.py
+description: Market Data Integration
+globs: src/models/market.py, src/services/market_service.py, src/api/endpoints/market.py
 alwaysApply: false
 ---
 
-## Core Development Points
+# Market Data Integration
 
-### 1. Quarter Data Validation
-- ✓ Validate quarter format (e.g., "2023-Q4")
-- ✓ Check quarter sequence
-- ✓ Verify quarter exists
-- ✓ Handle invalid formats
+## 1. Data Model
+The market data model represents overall market information and indices.
 
-### 2. Required Quarterly Metrics
-- ✓ Net profit growth
-- ✓ Revenue growth
-- ✓ Result date
-- ✓ Estimates
-- ✓ Fundamental insights
-
-### 3. Cache Management
-- ✓ Cache TTL: 1 hour (3600 seconds)
-- ✓ Implement force_refresh parameter
-- ✓ Clear cache on updates
-- ✓ Handle cache misses
-
-### 4. Database Operations
-- ✓ Use `detailed_financials` collection
-- ✓ Index on quarter field
-- ✓ Maintain historical data
-- ✓ Handle bulk operations
-
-### 5. Default Behaviors
-- ✓ Default to latest quarter
-- ✓ Sort by net profit growth
-- ✓ Handle empty quarters
-- ✓ Validate data completeness
-
-### 6. Data Formatting
-- ✓ Use "--" or "NA" for missing data
-- ✓ Never use null values
-- ✓ Format percentages consistently
-- ✓ Standardize date formats (ISO 8601)
-
-### 7. Update Management
-- ✓ Track last update timestamp
-- ✓ Validate before updates
-- ✓ Log all modifications
-- ✓ Maintain update history
-
-### 8. Performance Optimization
-- ✓ Batch process updates
-- ✓ Implement pagination
-- ✓ Cache frequent queries
-- ✓ Use async operations
-
-### 9. Market Overview Data
-- ✓ Top performers (by profit growth)
-- ✓ Worst performers (by loss)
-- ✓ Latest results (by date)
-- ✓ Overall market metrics
-
-### 10. API Implementation
-```markdown
-GET /market-data
-- Handle quarter parameter
-- Implement force_refresh
-- Return sorted results
-- Include metadata
-
-GET /quarters
-- Return available quarters
-- Sort in descending order
-- Include quarter metadata
-- Handle empty states
+```python
+class MarketData(BaseModel):
+    date: datetime
+    indices: Dict[str, IndexData]
+    sectors: Dict[str, SectorData]
+    top_gainers: List[StockSummary]
+    top_losers: List[StockSummary]
+    most_active: List[StockSummary]
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "date": "2023-02-28T16:00:00Z",
+                "indices": {
+                    "NIFTY 50": {"value": 17500.25, "change": 0.75},
+                    "SENSEX": {"value": 59500.50, "change": 0.80}
+                },
+                "sectors": {
+                    "Technology": {"change": 1.2, "stocks": 45},
+                    "Banking": {"change": -0.5, "stocks": 30}
+                },
+                "top_gainers": [...],
+                "top_losers": [...],
+                "most_active": [...]
+            }
+        }
 ```
 
----
+## 2. Index Data
+Index data represents a specific market index.
 
-**Note**: These guidelines ensure consistent market data handling. Developers should implement proper error handling and logging for all operations.
-
-**Response Format Example**:
-```json
-{
-    "quarter": "2023-Q4",
-    "top_performers": [...],
-    "worst_performers": [...],
-    "latest_results": [...],
-    "last_updated": "2024-02-28T12:00:00Z",
-    "metadata": {
-        "total_companies": 500,
-        "updated_companies": 480,
-        "pending_updates": 20
-    }
-}
-```
+```python
+class IndexData(BaseModel):
+    value: float
+    change: float
+    previous_close: Optional[float] = None
+    open: Optional[float] = None
+    high: Optional[float] = None
+    low: Optional[float] = None
+    volume: Optional[int] = None
 ```
 
+## 3. Sector Data
+Sector data represents performance of a specific market sector.
+
+```python
+class SectorData(BaseModel):
+    change: float
+    stocks: int
+    market_cap: Optional[float] = None
+    volume: Optional[int] = None
+    top_performers: Optional[List[StockSummary]] = None
+```
+
+## 4. Stock Summary
+Stock summary represents a simplified view of a stock.
+
+```python
+class StockSummary(BaseModel):
+    symbol: str
+    company_name: str
+    current_price: float
+    change: float
+    change_percent: float
+    volume: Optional[int] = None
+```
+
+## 5. Market Service
+The market service handles operations related to market data.
+
+```python
+class MarketService:
+    def __init__(self, db: Database):
+        self.db = db
+        self.collection = db.market_data
+    
+    async def get_latest_market_data(self) -> MarketData:
+        # Implementation
+        
+    async def get_market_data_by_date(self, date: datetime) -> Optional[MarketData]:
+        # Implementation
+        
+    async def update_market_data(self, data: MarketData) -> bool:
+        # Implementation
+```
+
+## 6. API Endpoints
+Market data is exposed through the following endpoints:
+
+- `GET /api/v1/market/data` - Get latest market data
+- `GET /api/v1/market/data/{date}` - Get market data by date
+- `GET /api/v1/market/indices` - Get all indices
+- `GET /api/v1/market/sectors` - Get all sectors
+
+## 7. File Organization
+- ✓ Market models should be defined in `src/models/market.py`
+- ✓ Market services should be implemented in `src/services/market_service.py`
+- ✓ Market API endpoints should be defined in `src/api/endpoints/market.py`
+- ✓ Market data tests should be placed in `tests/test_market.py`
+- ✓ Market data utilities should be placed in `src/utils/market_utils.py`
+- ✓ Market data scripts should be placed in `tools/scripts/`
+
+## 8. Data Processing Rules
+- ✓ Update market data at regular intervals
+- ✓ Cache market data for quick access
+- ✓ Format percentage values consistently
+- ✓ Sort lists by appropriate metrics
+- ✓ Handle missing data gracefully
+- ✓ Implement proper error handling
+
+## 9. Error Handling
+- ✓ Handle API rate limits for external data sources
+- ✓ Log all data processing errors
+- ✓ Provide meaningful error messages
+- ✓ Implement retry logic for transient failures
+- ✓ Return appropriate HTTP status codes
+
+These guidelines ensure consistent handling of market data across the application.

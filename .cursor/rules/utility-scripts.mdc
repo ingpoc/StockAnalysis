@@ -1,0 +1,93 @@
+---
+description: Utility Scripts Organization
+globs: tools/scripts/*.py
+alwaysApply: false
+---
+ ---
+description: Utility Scripts Organization
+globs: tools/scripts/*.py
+alwaysApply: false
+---
+
+# Utility Scripts Organization
+
+## 1. Script Organization
+- ✓ All utility scripts must be placed in the `tools/scripts/` directory
+- ✓ Scripts should have descriptive names
+- ✓ Scripts should be organized by functionality
+- ✓ Database management scripts should be prefixed with `db_`
+- ✓ Data import/export scripts should be prefixed with `import_` or `export_`
+- ✓ Cleanup scripts should be prefixed with `clean_`
+- ✓ Backup scripts should be prefixed with `backup_`
+
+## 2. Script Structure
+```python
+"""
+Script to [description].
+"""
+import asyncio
+import logging
+from dotenv import load_dotenv
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("script_name.log")
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+async def main():
+    """Main function."""
+    # Implementation
+    
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## 3. Script Documentation
+- ✓ Each script should have a docstring describing its purpose
+- ✓ Each function should have a docstring
+- ✓ Complex logic should be commented
+- ✓ Command-line arguments should be documented
+- ✓ Output format should be documented
+- ✓ Dependencies should be documented
+
+## 4. Script Functionality
+- ✓ Scripts should have a single responsibility
+- ✓ Scripts should be idempotent when possible
+- ✓ Scripts should handle errors gracefully
+- ✓ Scripts should log all operations
+- ✓ Scripts should provide meaningful output
+- ✓ Scripts should be configurable via command-line arguments or environment variables
+
+## 5. Database Scripts
+- ✓ Database connection details should be loaded from environment variables
+- ✓ Scripts should verify the connection before proceeding
+- ✓ Scripts should handle connection errors gracefully
+- ✓ Scripts should log all database operations
+- ✓ Scripts should provide meaningful output
+- ✓ Scripts should confirm before destructive operations
+
+## 6. Import/Export Scripts
+- ✓ Scripts should validate input data
+- ✓ Scripts should handle missing or invalid data gracefully
+- ✓ Scripts should log all operations
+- ✓ Scripts should provide meaningful output
+- ✓ Scripts should support various file formats (CSV, JSON, etc.)
+- ✓ Scripts should handle duplicate data
+
+## 7. Logging
+- ✓ All scripts should log to both console and file
+- ✓ Log files should be stored in the `logs/` directory
+- ✓ Log files should be named after the script
+- ✓ Log level should be configurable
+- ✓ Logs should include timestamps
+- ✓ Logs should include the logger name
+
+These guidelines ensure consistent and effective utility scripts across the application.

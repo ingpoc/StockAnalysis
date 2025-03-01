@@ -1,0 +1,116 @@
+---
+description: Web Scraper Implementation
+globs: src/scraper/*.py, src/routers/scraper.py, src/schemas/financial_data.py
+alwaysApply: false
+---
+ ---
+description: Web Scraper Implementation
+globs: src/scraper/*.py, src/routers/scraper.py, src/schemas/financial_data.py
+alwaysApply: false
+---
+
+# Web Scraper Implementation
+
+## 1. Data Model
+The scraper data models represent financial data scraped from external sources.
+
+```python
+class ScrapeRequest(BaseModel):
+    result_type: str  # "LR", "BP", "WP", "PT", "NT"
+    url: Optional[str] = None
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "result_type": "LR",
+                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php"
+            }
+        }
+```
+
+```python
+class ScrapedFinancialData(BaseModel):
+    company_name: str
+    symbol: Optional[str] = None
+    result_date: str
+    financial_metrics: Dict[str, Any]
+    quarter: str
+    source: str
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "company_name": "Apple Inc.",
+                "symbol": "AAPL",
+                "result_date": "2023-01-25",
+                "financial_metrics": {
+                    "revenue": 97278000000,
+                    "net_profit": 24160000000,
+                    "eps": 1.52
+                },
+                "quarter": "Q1 2023",
+                "source": "MoneyControl"
+            }
+        }
+```
+
+## 2. Scraper Service
+The scraper service handles operations related to web scraping.
+
+```python
+class ScraperService:
+    def __init__(self, db: Database):
+        self.db = db
+        self.collection = db.financial_data
+    
+    async def scrape_moneycontrol(self, request: ScrapeRequest) -> List[ScrapedFinancialData]:
+        # Implementation
+        
+    async def save_scraped_data(self, data: List[ScrapedFinancialData]) -> int:
+        # Implementation
+        
+    async def get_available_quarters(self) -> List[str]:
+        # Implementation
+```
+
+## 3. API Endpoints
+Scraper functionality is exposed through the following endpoints:
+
+- `POST /api/v1/scraper/moneycontrol` - Scrape data from MoneyControl
+- `GET /api/v1/market/quarters` - Get available quarters
+
+## 4. File Organization
+- ✓ Scraper modules should be defined in `src/scraper/`
+- ✓ Scraper-specific utilities should be placed in `src/scraper/utils.py`
+- ✓ Scraper API endpoints should be defined in `src/routers/scraper.py`
+- ✓ Scraper data schemas should be defined in `src/schemas/financial_data.py`
+- ✓ Scraper tests should be placed in `tests/test_scraper.py`
+- ✓ Scraper debug utilities should be placed in `tests/debug_selectors.py`
+- ✓ Scraper login tests should be placed in `tests/test_login.py`
+
+## 5. Scraper Implementation
+- ✓ Use BeautifulSoup for HTML parsing
+- ✓ Use Selenium for JavaScript-heavy pages
+- ✓ Implement proper error handling
+- ✓ Handle rate limiting and blocking
+- ✓ Implement retry logic
+- ✓ Log all scraping operations
+- ✓ Respect robots.txt
+
+## 6. Data Processing Rules
+- ✓ Clean and normalize scraped data
+- ✓ Convert string values to appropriate types
+- ✓ Handle missing or inconsistent data
+- ✓ Validate scraped data
+- ✓ Store raw data for debugging
+- ✓ Implement proper error handling
+
+## 7. Error Handling
+- ✓ Handle network errors
+- ✓ Handle parsing errors
+- ✓ Handle authentication failures
+- ✓ Log all errors
+- ✓ Provide meaningful error messages
+- ✓ Implement retry logic for transient failures
+
+These guidelines ensure consistent implementation of web scrapers across the application.

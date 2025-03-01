@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import List, Dict, Any
 
-from src.schemas.financial_data import ScrapeRequest, ScrapeResponse, CompanyFinancials
+from src.schemas.financial_data import (
+    ScrapeRequest, 
+    ScrapeResponse, 
+    CompanyFinancials, 
+    RemoveQuarterRequest, 
+    RemoveQuarterResponse
+)
 from src.utils.database import get_database
 from src.scraper.moneycontrol_scraper import scrape_moneycontrol_earnings, get_company_financials
 from src.utils.logger import logger
@@ -25,7 +31,7 @@ async def scrape_moneycontrol(
     Scrape financial data from MoneyControl earnings page.
     
     Args:
-        request (ScrapeRequest): Request containing URL to scrape and optional result type.
+        request (ScrapeRequest): Request containing result type to scrape.
         db (AsyncIOMotorDatabase): MongoDB database dependency.
         
     Returns:
@@ -35,31 +41,48 @@ async def scrape_moneycontrol(
         # Get the company financials collection
         collection = db.detailed_financials
         
-        # Log the request details
-        result_type = "custom"
-        if request.result_type:
-            result_type = request.result_type
-        elif "tab=" in request.url:
-            tab_param = request.url.split("tab=")[1].split("&")[0]
-            result_type = tab_param
-            
-        if result_type == "LR":
-            result_type_name = "Latest Results"
-        elif result_type == "BP":
-            result_type_name = "Best Performer"
-        elif result_type == "WP":
-            result_type_name = "Worst Performer"
-        elif result_type == "PT":
-            result_type_name = "Positive Turnaround"
-        elif result_type == "NT":
-            result_type_name = "Negative Turnaround"
+        # Map result types to names and URLs
+        result_type_mapping = {
+            "LR": {
+                "name": "Latest Results",
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy"
+            },
+            "BP": {
+                "name": "Best Performer",
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=BP&subType=yoy"
+            },
+            "WP": {
+                "name": "Worst Performer",
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=WP&subType=yoy"
+            },
+            "PT": {
+                "name": "Positive Turnaround",
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=PT&subType=yoy"
+            },
+            "NT": {
+                "name": "Negative Turnaround",
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=NT&subType=yoy"
+            }
+        }
+        
+        # Get the URL and name based on result type
+        result_type = request.result_type
+        if result_type in result_type_mapping:
+            result_type_name = result_type_mapping[result_type]["name"]
+            url = request.url or result_type_mapping[result_type]["url"]
         else:
             result_type_name = "Custom URL"
+            url = request.url
+            if not url:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="URL is required for custom result types"
+                )
             
         logger.info(f"Scraping request received for {result_type_name} ({result_type})")
         
         # Perform the scraping
-        results = await scrape_moneycontrol_earnings(request.url, collection)
+        results = await scrape_moneycontrol_earnings(url, collection)
         
         if not results:
             return ScrapeResponse(
@@ -129,4 +152,60 @@ async def get_company(
             detail=f"Company '{company_name}' not found"
         )
         
-    return company 
+    return company
+
+@router.post("/remove-quarter", response_model=RemoveQuarterResponse)
+async def remove_quarter_data(
+    request: RemoveQuarterRequest,
+    db: AsyncIOMotorDatabase = Depends(get_database)
+) -> RemoveQuarterResponse:
+    """
+    Remove all financial data for a specific quarter from the database.
+    
+    Args:
+        request (RemoveQuarterRequest): Request containing the quarter to remove.
+        db (AsyncIOMotorDatabase): MongoDB database dependency.
+        
+    Returns:
+        RemoveQuarterResponse: Response with removal status.
+    """
+    try:
+        # Get the company financials collection
+        collection = db.detailed_financials
+        
+        # Log the request details
+        logger.info(f"Removing {request.quarter} data from all companies")
+        
+        # Find all documents with the specified quarter
+        documents_with_quarter = await collection.count_documents(
+            {"financial_metrics.quarter": request.quarter}
+        )
+        
+        if documents_with_quarter == 0:
+            return RemoveQuarterResponse(
+                success=True,
+                message=f"No {request.quarter} data found in the database.",
+                documents_updated=0
+            )
+        
+        # Update all documents to remove the specified quarter from financial_metrics
+        result = await collection.update_many(
+            {"financial_metrics.quarter": request.quarter},
+            {"$pull": {"financial_metrics": {"quarter": request.quarter}}}
+        )
+        
+        # Log the result
+        logger.info(f"Removed {request.quarter} data from {result.modified_count} companies")
+        
+        return RemoveQuarterResponse(
+            success=True,
+            message=f"Successfully removed {request.quarter} data from {result.modified_count} companies.",
+            documents_updated=result.modified_count
+        )
+        
+    except Exception as e:
+        logger.error(f"An error occurred while removing {request.quarter} data: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while removing {request.quarter} data: {str(e)}"
+        ) 
