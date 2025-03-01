@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from typing import List, Optional
-from src.models.schemas import Holding, HoldingsList
+from src.models.schemas import Holding, HoldingsList, EnrichedHolding
 from src.services.portfolio_service import PortfolioService
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -103,4 +103,16 @@ async def import_holdings(
         return holdings
     except Exception as e:
         logger.error(f"Error importing holdings: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/holdings/enriched", response_model=List[EnrichedHolding])
+async def get_enriched_holdings(portfolio_service: PortfolioService = Depends(get_portfolio_service)):
+    """
+    Get all holdings enriched with current price information.
+    This endpoint combines portfolio data with current market prices in a single API call.
+    """
+    try:
+        return await portfolio_service.get_batch_enriched_holdings()
+    except Exception as e:
+        logger.error(f"Error fetching enriched holdings: {e}")
         raise HTTPException(status_code=500, detail=str(e)) 

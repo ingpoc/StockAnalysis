@@ -109,6 +109,25 @@ class MarketService:
             logger.error(f"Error fetching stock details for {symbol}: {str(e)}")
             raise Exception(f"Failed to fetch stock details: {str(e)}")
 
+    async def get_batch_stock_details(self, symbols: List[str]) -> Dict[str, StockResponse]:
+        """Get detailed stock information for multiple symbols in a single call"""
+        try:
+            result = {}
+            # Process each symbol and collect results
+            for symbol in symbols:
+                try:
+                    stock_data = await self.get_stock_details(symbol)
+                    result[symbol] = stock_data
+                except Exception as e:
+                    # Store error information in the result
+                    logger.warning(f"Error fetching stock details for {symbol}: {str(e)}")
+                    result[symbol] = {"error": str(e)}
+            
+            return result
+        except Exception as e:
+            logger.error(f"Error in batch stock details: {str(e)}")
+            raise Exception(f"Failed to fetch batch stock details: {str(e)}")
+
     @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_market_data(self, quarter: Optional[str] = None, force_refresh: bool = False) -> MarketOverview:
         """Get market overview data with optional quarter filter"""

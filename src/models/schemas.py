@@ -255,3 +255,20 @@ class Holding(BaseModel):
 
 class HoldingsList(BaseModel):
     holdings: List[Holding] = Field(default_factory=list)
+    
+class EnrichedHolding(Holding):
+    """Holding with current market price data"""
+    current_price: Optional[float] = None
+    current_value: Optional[float] = None
+    gain_loss: Optional[float] = None
+    gain_loss_percentage: Optional[float] = None
+    has_error: bool = False
+    error_message: Optional[str] = None
+    
+    class Config:
+        populate_by_name = True
+        json_encoders = {
+            ObjectId: str,
+            datetime: lambda dt: dt.isoformat()
+        }
+        arbitrary_types_allowed = True
