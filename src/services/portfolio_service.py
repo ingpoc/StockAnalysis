@@ -101,22 +101,34 @@ class PortfolioService:
             csv_reader = csv.DictReader(csv_file)
             
             for row in csv_reader:
+                # Skip empty rows
+                if not row.get('Instrument'):
+                    continue
+                    
                 # Convert row data to Holding model
-                holding = Holding(
-                    symbol=row.get('symbol', '').strip(),
-                    company_name=row.get('company_name', '').strip(),
-                    quantity=int(row.get('quantity', 0)),
-                    average_price=float(row.get('average_price', 0)),
-                    purchase_date=datetime.fromisoformat(row.get('purchase_date')) if row.get('purchase_date') else None,
-                    notes=row.get('notes', '')
-                )
-                
-                # Insert into database
-                result = await db[self.collection_name].insert_one(
-                    holding.model_dump(exclude={"id"}, by_alias=True)
-                )
-                holding.id = result.inserted_id
-                holdings.append(holding)
+                try:
+                    symbol = row.get('Instrument', '').strip().replace('"', '')
+                    quantity = int(float(row.get('Qty.', 0)))
+                    avg_price = float(row.get('Avg. cost', 0))
+                    
+                    # Create holding with available data
+                    holding = Holding(
+                        symbol=symbol,
+                        company_name=symbol,  # Use symbol as company name if not available
+                        quantity=quantity,
+                        average_price=avg_price,
+                        notes=f"Imported from CSV on {datetime.now().strftime('%Y-%m-%d')}"
+                    )
+                    
+                    # Insert into database
+                    result = await db[self.collection_name].insert_one(
+                        holding.model_dump(exclude={"id"}, by_alias=True)
+                    )
+                    holding.id = result.inserted_id
+                    holdings.append(holding)
+                except Exception as e:
+                    logger.error(f"Error processing row {row}: {e}")
+                    continue
                 
             return holdings
         except Exception as e:
