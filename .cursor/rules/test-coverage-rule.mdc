@@ -1,0 +1,309 @@
+---
+description: Test Coverage Guidelines for StockAnalysis Backend
+globs: tests/**/*.py, src/**/*.py
+alwaysApply: false
+---
+ ---
+description: Test Coverage Guidelines for StockAnalysis Backend
+globs: tests/**/*.py, src/**/*.py
+alwaysApply: false
+version: 1.0.0
+last_updated: 2024-03-02
+---
+
+# Test Coverage Guidelines
+
+## Purpose
+This document outlines requirements for test coverage in the StockAnalysis backend to ensure code quality, stability, and maintainability.
+
+## Coverage Requirements
+
+- ✓ Minimum 80% line coverage for all production code
+- ✓ 100% coverage for critical components (data processing, API endpoints, authentication)
+- ✓ All public functions and methods must have at least one test
+- ✓ All edge cases and error paths must be tested
+- ✓ All API endpoints must have integration tests
+
+## Running Tests with Coverage
+
+```bash
+# Run all tests with coverage
+pytest --cov=src tests/
+
+# Generate HTML coverage report
+pytest --cov=src --cov-report=html tests/
+
+# Run tests for a specific module with coverage
+pytest --cov=src.routers.scraper tests/routers/test_scraper.py
+```
+
+## Coverage Verification in CI
+
+```yaml
+# Example GitHub Actions workflow step
+- name: Run tests with coverage
+  run: |
+    pytest --cov=src --cov-report=xml --cov-report=term tests/
+    coverage report --fail-under=80
+```
+
+## Unit Test Examples
+
+### Testing Pure Functions
+
+```python
+# src/utils/calculations.py
+def calculate_moving_average(data: list[float], window: int) -> list[float]:
+    """Calculate moving average for a series of data points."""
+    if not data or window <= 0:
+        return []
+    if window > len(data):
+        return [sum(data) / len(data)] * len(data)
+    
+    result = []
+    for i in range(len(data)):
+        if i < window - 1:
+            result.append(sum(data[:i+1]) / (i+1))
+        else:
+            result.append(sum(data[i-window+1:i+1]) / window)
+    return result
+
+# tests/utils/test_calculations.py
+import pytest
+from src.utils.calculations import calculate_moving_average
+
+def test_calculate_moving_average_empty_list():
+    """Test moving average with empty list."""
+    assert calculate_moving_average([], 3) == []
+
+def test_calculate_moving_average_window_too_large():
+    """Test moving average when window is larger than data."""
+    data = [1, 2, 3]
+    result = calculate_moving_average(data, 5)
+    assert len(result) == 3
+    assert result == [2.0, 2.0, 2.0]  # Average of entire dataset
+
+def test_calculate_moving_average_standard_case():
+    """Test moving average with standard inputs."""
+    data = [1, 2, 3, 4, 5]
+    result = calculate_moving_average(data, 3)
+    assert len(result) == 5
+    assert result[0] == 1.0  # Average of [1]
+    assert result[1] == 1.5  # Average of [1, 2]
+    assert result[2] == 2.0  # Average of [1, 2, 3]
+    assert result[3] == 3.0  # Average of [2, 3, 4]
+    assert result[4] == 4.0  # Average of [3, 4, 5]
+```
+
+### Testing Database Interactions
+
+```python
+# tests/utils/test_database.py
+import pytest
+from unittest.mock import patch, MagicMock
+from motor.motor_asyncio import AsyncIOMotorClient
+from src.utils.database import get_database, close_mongodb_connection
+
+@pytest.mark.asyncio
+async def test_get_database():
+    """Test database client initialization."""
+    with patch('motor.motor_asyncio.AsyncIOMotorClient') as mock_client:
+        mock_instance = MagicMock()
+        mock_client.return_value = mock_instance
+        mock_instance.__getitem__.return_value = "test_db"
+        
+        db = await get_database()
+        mock_client.assert_called_once()
+        assert db == "test_db"
+
+@pytest.mark.asyncio
+async def test_close_mongodb_connection():
+    """Test closing database connection."""
+    with patch('src.utils.database.db_client', new=MagicMock(spec=AsyncIOMotorClient)) as mock_client:
+        await close_mongodb_connection()
+        mock_client.close.assert_called_once()
+```
+
+### Testing API Endpoints
+
+```python
+# tests/routers/test_scraper.py
+import pytest
+from fastapi.testclient import TestClient
+from unittest.mock import patch, AsyncMock
+from src.main import app
+
+client = TestClient(app)
+
+@pytest.mark.asyncio
+async def test_scrape_endpoint_success():
+    """Test successful scraping endpoint."""
+    test_stock = "TEST"
+    
+    # Mock the scraper function
+    with patch('src.routers.scraper.scrape_financial_data', new_callable=AsyncMock) as mock_scrape:
+        mock_scrape.return_value = {
+            "success": True, 
+            "message": "Successfully scraped data", 
+            "data": {"stock": test_stock, "metrics": {"pe": 10.5}}
+        }
+        
+        response = client.post("/scraper/scrape", json={"stock": test_stock})
+        
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert response.json()["data"]["stock"] == test_stock
+        mock_scrape.assert_called_once_with(test_stock, any)
+
+@pytest.mark.asyncio
+async def test_scrape_endpoint_failure():
+    """Test scraping endpoint failure handling."""
+    with patch('src.routers.scraper.scrape_financial_data', new_callable=AsyncMock) as mock_scrape:
+        mock_scrape.side_effect = Exception("Scraping failed")
+        
+        response = client.post("/scraper/scrape", json={"stock": "TEST"})
+        
+        assert response.status_code == 500
+        assert response.json()["success"] is False
+        assert "error" in response.json()["message"].lower()
+```
+
+## Integration Test Examples
+
+```python
+# tests/integration/test_scraper_integration.py
+import pytest
+import mongomock
+from unittest.mock import patch, AsyncMock
+from fastapi.testclient import TestClient
+from src.main import app
+from src.utils.database import get_database
+
+# Mock MongoDB client for integration tests
+@pytest.fixture
+def mock_db():
+    """Create a mock MongoDB client for testing."""
+    async def mock_get_database():
+        client = mongomock.AsyncIOMotorClient()
+        return client.test_database
+    
+    with patch('src.utils.database.get_database', mock_get_database):
+        yield
+
+@pytest.mark.asyncio
+async def test_remove_quarter_integration(mock_db):
+    """Test removing a quarter integration."""
+    client = TestClient(app)
+    
+    # Setup test data in mock database
+    db = await get_database()
+    collection = db.detailed_financials
+    await collection.insert_many([
+        {"company": "TestCo1", "financial_data": [
+            {"quarter": "Q1 FY22-23", "metric": "value1"},
+            {"quarter": "Q2 FY22-23", "metric": "value2"}
+        ]},
+        {"company": "TestCo2", "financial_data": [
+            {"quarter": "Q1 FY22-23", "metric": "value3"}
+        ]}
+    ])
+    
+    # Test the endpoint
+    response = client.post("/scraper/remove-quarter", json={"quarter": "Q1 FY22-23"})
+    
+    # Verify response
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["documents_updated"] == 2
+    
+    # Verify database was updated correctly
+    companies = await collection.find({}).to_list(length=100)
+    assert len(companies) == 2
+    
+    # TestCo1 should only have Q2 data now
+    company1 = next(co for co in companies if co["company"] == "TestCo1")
+    assert len(company1["financial_data"]) == 1
+    assert company1["financial_data"][0]["quarter"] == "Q2 FY22-23"
+    
+    # TestCo2 should have empty financial_data
+    company2 = next(co for co in companies if co["company"] == "TestCo2")
+    assert len(company2["financial_data"]) == 0
+```
+
+## End-to-End Test Examples
+
+```python
+# tests/e2e/test_scraper_flow.py
+import pytest
+from unittest.mock import patch, AsyncMock
+from fastapi.testclient import TestClient
+from src.main import app
+
+@pytest.mark.asyncio
+async def test_scrape_and_retrieve_flow():
+    """Test the full scrape and retrieve data flow."""
+    client = TestClient(app)
+    test_stock = "TestStock"
+    test_quarter = "Q1 FY22-23"
+    
+    # Mock external dependencies
+    with patch('src.services.scraper.MoneyControlScraper') as MockScraper, \
+         patch('src.utils.database.get_database', new_callable=AsyncMock) as mock_db:
+        
+        # Setup mock scraper
+        mock_scraper_instance = MockScraper.return_value
+        mock_scraper_instance.login.return_value = True
+        mock_scraper_instance.get_financial_data.return_value = {
+            "company": test_stock,
+            "financial_data": [
+                {"quarter": test_quarter, "revenue": 1000, "profit": 100}
+            ]
+        }
+        
+        # Setup mock database
+        mock_collection = AsyncMock()
+        mock_db.return_value.__getitem__.return_value = mock_collection
+        mock_collection.update_one.return_value.modified_count = 1
+        mock_collection.find_one.return_value = {
+            "company": test_stock,
+            "financial_data": [
+                {"quarter": test_quarter, "revenue": 1000, "profit": 100}
+            ]
+        }
+        
+        # Step 1: Scrape data
+        scrape_response = client.post("/scraper/scrape", json={"stock": test_stock})
+        assert scrape_response.status_code == 200
+        assert scrape_response.json()["success"] is True
+        
+        # Step 2: Retrieve scraped data
+        retrieve_response = client.get(f"/market-data/company/{test_stock}")
+        assert retrieve_response.status_code == 200
+        assert retrieve_response.json()["company"] == test_stock
+        assert len(retrieve_response.json()["financial_data"]) == 1
+        assert retrieve_response.json()["financial_data"][0]["quarter"] == test_quarter
+        
+        # Step 3: Remove quarter
+        remove_response = client.post("/scraper/remove-quarter", json={"quarter": test_quarter})
+        assert remove_response.status_code == 200
+        assert remove_response.json()["success"] is True
+```
+
+## Best Practices
+
+1. **Test Data Isolation**: Each test should create its own test data
+2. **Mock External Dependencies**: Use mocks for external services and databases
+3. **Clean Up After Tests**: Ensure all resources are properly cleaned up
+4. **Parameterize Tests**: Use pytest.mark.parametrize for testing multiple scenarios
+5. **Test Naming Convention**: Use descriptive names following the pattern `test_{function}_{scenario}`
+6. **Separate Unit and Integration Tests**: Organize tests by type in separate directories
+7. **Fixture Reuse**: Create fixtures for common setup/teardown operations
+8. **Test Documentation**: Include docstrings describing what each test is verifying
+9. **Error Scenarios**: Test both success and failure paths
+10. **Coverage Reports**: Regularly review coverage reports to identify untested code
+
+## Related Rules
+
+- See [integration-testing-rule.mdc] for guidance on API integration testing
+- See [error-handling-rule.mdc] for error handling patterns that should be tested
+- See [api-contract-rule.mdc] for API contract requirements that must be verified

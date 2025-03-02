@@ -1,0 +1,326 @@
+---
+description: API Documentation Guidelines for StockAnalysis Backend
+globs: src/routers/**/*.py, src/models/**/*.py, docs/*.md
+alwaysApply: false
+---
+ ---
+description: API Documentation Guidelines for StockAnalysis Backend
+globs: src/routers/**/*.py, src/models/**/*.py, docs/*.md
+alwaysApply: false
+version: 1.0.0
+last_updated: 2024-03-02
+---
+
+# API Documentation Guidelines
+
+## Purpose
+This document provides guidelines for documenting API endpoints in the StockAnalysis backend to ensure they are well-understood by developers and maintainable over time.
+
+## Key Principles
+
+- ✓ All API endpoints must have comprehensive docstrings
+- ✓ Request and response models must be fully documented
+- ✓ Error responses must be documented for each endpoint
+- ✓ Authentication requirements must be clearly specified
+- ✓ Example requests and responses should be provided
+- ✓ FastAPI's automatic documentation generation should be utilized
+
+## FastAPI Endpoint Documentation
+
+```python
+@router.post(
+    "/scrape",
+    response_model=ScrapeResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"model": ErrorResponse, "description": "Invalid input parameters"},
+        401: {"model": ErrorResponse, "description": "Authentication failed"},
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+    },
+)
+async def scrape_stock(
+    stock_data: StockRequest, 
+    db: Database = Depends(get_database)
+) -> ScrapeResponse:
+    """
+    Scrape financial data for a specific stock from Money Control.
+    
+    This endpoint initiates a scraping process for the specified stock symbol,
+    fetches financial metrics, and stores them in the database.
+    
+    Parameters:
+    - **stock_data**: StockRequest model containing the stock symbol to scrape
+    
+    Returns:
+    - **ScrapeResponse**: Contains success status, message, and retrieved data
+    
+    Raises:
+    - 400: If the stock symbol is invalid or missing
+    - 401: If authentication with the data source fails
+    - 500: If scraping process encounters an error
+    
+    Example:
+    ```
+    POST /scraper/scrape
+    {
+        "stock": "RELIANCE"
+    }
+    ```
+    
+    Response:
+    ```
+    {
+        "success": true,
+        "message": "Successfully scraped data for RELIANCE",
+        "data": {
+            "stock": "RELIANCE",
+            "metrics": {
+                "pe": 25.6,
+                "market_cap": 1500000000000,
+                "book_value": 1100.5
+            }
+        }
+    }
+    ```
+    """
+    try:
+        # Implementation...
+        pass
+    except Exception as e:
+        # Error handling...
+        pass
+```
+
+## Request/Response Model Documentation
+
+```python
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
+
+class StockRequest(BaseModel):
+    """
+    Request model for stock scraping operations.
+    
+    Attributes:
+    - **stock**: Symbol/name of the stock to scrape (e.g., "RELIANCE", "TATAMOTORS")
+    """
+    stock: str = Field(
+        ..., 
+        description="Stock symbol or name to scrape",
+        example="RELIANCE",
+        min_length=1
+    )
+
+class ScrapeResponse(BaseModel):
+    """
+    Response model for stock scraping operations.
+    
+    Attributes:
+    - **success**: Boolean indicating if the operation was successful
+    - **message**: Human-readable message about the operation result
+    - **data**: Optional dictionary containing the scraped data if successful
+    """
+    success: bool = Field(
+        ..., 
+        description="Indicates if the operation was successful"
+    )
+    message: str = Field(
+        ..., 
+        description="Human-readable message about the operation result"
+    )
+    data: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Contains the scraped data if operation was successful"
+    )
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "success": True,
+                "message": "Successfully scraped data for RELIANCE",
+                "data": {
+                    "stock": "RELIANCE",
+                    "metrics": {
+                        "pe": 25.6,
+                        "market_cap": 1500000000000,
+                        "book_value": 1100.5
+                    }
+                }
+            }
+        }
+```
+
+## Documentation for Error Responses
+
+```python
+class ErrorDetail(BaseModel):
+    """
+    Model for detailed error information.
+    
+    Attributes:
+    - **loc**: Location where the error occurred (field name, index, etc.)
+    - **msg**: Error message
+    - **type**: Error type identifier
+    """
+    loc: List[str] = Field(..., description="Error location")
+    msg: str = Field(..., description="Error message")
+    type: str = Field(..., description="Error type")
+
+class ErrorResponse(BaseModel):
+    """
+    Standard error response format.
+    
+    Attributes:
+    - **success**: Always false for error responses
+    - **message**: Human-readable error message
+    - **details**: Optional list of detailed error information
+    """
+    success: bool = Field(False, description="Always false for error responses")
+    message: str = Field(..., description="Human-readable error message")
+    details: Optional[List[ErrorDetail]] = Field(None, description="Detailed error information")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "success": False,
+                "message": "Invalid input parameters",
+                "details": [
+                    {
+                        "loc": ["body", "stock"],
+                        "msg": "Field required",
+                        "type": "value_error.missing"
+                    }
+                ]
+            }
+        }
+```
+
+## Generating API Documentation
+
+FastAPI automatically generates API documentation using OpenAPI. Access points:
+
+- `/docs`: Swagger UI documentation
+- `/redoc`: ReDoc documentation
+
+## API Documentation in Markdown
+
+For each major API category, create a dedicated markdown file in the `docs/` directory:
+
+```markdown
+# Scraper API
+
+## Endpoints
+
+### POST /scraper/scrape
+
+Scrapes financial data for a specific stock from Money Control.
+
+**Request:**
+```json
+{
+    "stock": "RELIANCE"
+}
+```
+
+**Successful Response (200):**
+```json
+{
+    "success": true,
+    "message": "Successfully scraped data for RELIANCE",
+    "data": {
+        "stock": "RELIANCE",
+        "metrics": {
+            "pe": 25.6,
+            "market_cap": 1500000000000,
+            "book_value": 1100.5
+        }
+    }
+}
+```
+
+**Error Responses:**
+
+- 400 Bad Request: Invalid input parameters
+```json
+{
+    "success": false,
+    "message": "Invalid input parameters",
+    "details": [
+        {
+            "loc": ["body", "stock"],
+            "msg": "Field required",
+            "type": "value_error.missing"
+        }
+    ]
+}
+```
+
+- 401 Unauthorized: Authentication failed
+- 500 Internal Server Error: Scraping operation failed
+```
+
+## API Changes Documentation
+
+When making changes to existing APIs:
+
+1. Document the change in a changelog
+2. Update all affected documentation
+3. Clearly mark breaking changes
+4. Provide migration instructions for clients
+
+Example changelog entry:
+
+```markdown
+# API Changelog
+
+## 2024-03-02
+
+### Changed
+- `/scraper/remove-quarter`: Now accepts `quarter_data` as a dictionary with a `quarter` key instead of a string parameter.
+  ```json
+  // Before
+  { "quarter": "Q1 FY22-23" }
+  // After
+  { "quarter": "Q1 FY22-23" }
+  ```
+  - Response now includes `documents_updated` instead of `companies_affected`
+```
+
+## API Versioning Documentation
+
+Document the versioning strategy:
+
+```markdown
+# API Versioning
+
+The StockAnalysis API uses path-based versioning:
+
+- `/v1/scraper/scrape` - Version 1 endpoint
+- `/v2/scraper/scrape` - Version 2 endpoint with enhanced features
+
+## Compatibility Policy
+
+- Backward compatibility is maintained within a version
+- Breaking changes trigger a version increment
+- Multiple versions are supported simultaneously during transition periods
+- Deprecation notices are provided at least 3 months before removing a version
+```
+
+## Best Practices
+
+1. **Keep Documentation Updated**: Always update documentation when changing API functionality
+2. **Document Error Cases**: Document all possible error responses for each endpoint
+3. **Include Examples**: Provide request and response examples for all endpoints
+4. **Use Consistent Terminology**: Use consistent terms throughout the documentation
+5. **Denote Required vs Optional**: Clearly mark which parameters are required vs optional
+6. **Document Authentication**: Specify authentication requirements for each endpoint
+7. **Include Rate Limits**: Document any rate limiting applied to endpoints
+8. **Provide Use Cases**: Include common use cases and workflows
+9. **Link Related Endpoints**: Cross-reference related endpoints
+10. **Include Deprecation Notices**: Clearly mark deprecated endpoints
+
+## Related Rules
+
+- See [api-contract-rule.mdc] for API contract requirements
+- See [error-handling-rule.mdc] for error response formatting requirements
+- See [integration-testing-rule.mdc] for testing documentation requirements

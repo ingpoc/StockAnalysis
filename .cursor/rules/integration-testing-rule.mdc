@@ -1,0 +1,250 @@
+---
+description: Integration Testing Guidelines
+globs: tests/**/*.py, src/**/*.py
+alwaysApply: false
+---
+---
+description: Integration Testing Guidelines
+globs: tests/**/*.py, src/**/*.py
+alwaysApply: false
+version: 1.0.0
+last_updated: 2024-03-02
+---
+
+# Integration Testing Guidelines
+
+## Purpose
+This document provides guidelines for implementing integration tests to ensure that the StockAnalysis backend API endpoints work correctly and maintain compatibility with the frontend.
+
+## Key Principles
+- ✓ Test all API endpoints for correct functionality
+- ✓ Validate response formats match the expected contract
+- ✓ Test both success and error scenarios
+- ✓ Use mocks for external dependencies
+- ✓ Ensure tests run independently of each other
+- ✓ Test with realistic input data that matches frontend usage
+
+## API Testing Structure
+
+Each API endpoint should have tests for:
+
+1. **Happy Path** - Correct inputs produce expected outputs
+2. **Validation** - Invalid inputs are properly rejected
+3. **Error Handling** - Errors are properly caught and formatted
+4. **Edge Cases** - Special cases and boundary conditions
+
+## Test Implementation Pattern
+
+```python
+async def test_api_endpoint_success(test_client, db_fixture):
+    """Test successful API endpoint call."""
+    # Arrange
+    test_data = {
+        "required_param": "test_value",
+        "optional_param": 123
+    }
+    
+    # Act
+    response = await test_client.post("/api/v1/endpoint", json=test_data)
+    response_data = response.json()
+    
+    # Assert
+    assert response.status_code == 200
+    assert response_data["success"] is True
+    assert "message" in response_data
+    assert "data" in response_data
+    # Additional assertions on the response structure/data
+```
+
+## Error Case Testing
+
+```python
+async def test_api_endpoint_validation_error(test_client):
+    """Test API endpoint with invalid inputs."""
+    # Arrange
+    invalid_data = {
+        # Missing required_param
+        "optional_param": 123
+    }
+    
+    # Act
+    response = await test_client.post("/api/v1/endpoint", json=invalid_data)
+    response_data = response.json()
+    
+    # Assert
+    assert response.status_code == 400
+    assert response_data["success"] is False
+    assert "message" in response_data
+    assert "required_param is required" in response_data["message"].lower()
+```
+
+## Mocking Dependencies
+
+```python
+@pytest.fixture
+def mock_database():
+    """Create a mock database for testing."""
+    # Create mock collections
+    mock_collection = AsyncMock()
+    
+    # Configure mock methods
+    mock_collection.find.return_value.to_list.return_value = [
+        {"_id": "1", "name": "Test Item 1"},
+        {"_id": "2", "name": "Test Item 2"}
+    ]
+    
+    # Create mock database
+    mock_db = AsyncMock()
+    mock_db.collection_name = mock_collection
+    
+    # Return the mock
+    return mock_db
+
+async def test_endpoint_with_mocked_db(test_client, mock_database):
+    """Test endpoint with mocked database."""
+    # Override the dependency
+    app.dependency_overrides[get_database] = lambda: mock_database
+    
+    # Test implementation
+    # ...
+    
+    # Clean up
+    app.dependency_overrides = {}
+```
+
+## Testing Data Access Patterns
+
+```python
+async def test_data_access_layer(mock_database):
+    """Test that data access functions work correctly."""
+    # Arrange
+    db = mock_database
+    test_query = {"field": "value"}
+    
+    # Configure mock
+    expected_result = [{"_id": "1", "field": "value"}]
+    db.collection.find.return_value.to_list.return_value = expected_result
+    
+    # Act
+    result = await get_items_by_field(test_query, db)
+    
+    # Assert
+    db.collection.find.assert_called_once_with(test_query)
+    assert result == expected_result
+```
+
+## Contract Testing
+
+Test that the API response matches the expected format:
+
+```python
+async def test_api_contract(test_client):
+    """Test that API response follows the expected contract."""
+    # Act
+    response = await test_client.get("/api/v1/endpoint")
+    data = response.json()
+    
+    # Assert contract format
+    assert "success" in data
+    assert isinstance(data["success"], bool)
+    assert "message" in data
+    assert isinstance(data["message"], str)
+    assert "data" in data
+    
+    # Additional contract validations based on endpoint
+    if data["success"]:
+        assert data["data"] is not None
+        # Validate specific fields in data based on endpoint
+        assert "required_field" in data["data"]
+        assert "timestamp" in data["data"]
+        # etc.
+```
+
+## Authentication Testing
+
+```python
+async def test_protected_endpoint_unauthorized(test_client):
+    """Test that protected endpoints require authentication."""
+    # Act
+    response = await test_client.get("/api/v1/protected-endpoint")
+    
+    # Assert
+    assert response.status_code == 401
+    
+async def test_protected_endpoint_authorized(test_client, auth_token):
+    """Test authorized access to protected endpoint."""
+    # Act
+    response = await test_client.get(
+        "/api/v1/protected-endpoint",
+        headers={"Authorization": f"Bearer {auth_token}"}
+    )
+    
+    # Assert
+    assert response.status_code == 200
+    # Additional assertions
+```
+
+## End-to-End API Flow Testing
+
+Test complete API flows that mimic real frontend usage:
+
+```python
+async def test_complete_api_flow(test_client, db_fixture):
+    """Test a complete API flow similar to frontend usage."""
+    # Step 1: Create a resource
+    create_response = await test_client.post(
+        "/api/v1/resource",
+        json={"name": "Test Resource", "value": 100}
+    )
+    create_data = create_response.json()
+    assert create_response.status_code == 201
+    assert create_data["success"] is True
+    resource_id = create_data["data"]["id"]
+    
+    # Step 2: Get the resource
+    get_response = await test_client.get(f"/api/v1/resource/{resource_id}")
+    get_data = get_response.json()
+    assert get_response.status_code == 200
+    assert get_data["success"] is True
+    assert get_data["data"]["name"] == "Test Resource"
+    
+    # Step 3: Update the resource
+    update_response = await test_client.put(
+        f"/api/v1/resource/{resource_id}",
+        json={"name": "Updated Resource", "value": 200}
+    )
+    update_data = update_response.json()
+    assert update_response.status_code == 200
+    assert update_data["success"] is True
+    
+    # Step 4: Verify the update
+    verify_response = await test_client.get(f"/api/v1/resource/{resource_id}")
+    verify_data = verify_response.json()
+    assert verify_response.status_code == 200
+    assert verify_data["data"]["name"] == "Updated Resource"
+    assert verify_data["data"]["value"] == 200
+    
+    # Step 5: Delete the resource
+    delete_response = await test_client.delete(f"/api/v1/resource/{resource_id}")
+    assert delete_response.status_code == 200
+    
+    # Step 6: Verify deletion
+    final_response = await test_client.get(f"/api/v1/resource/{resource_id}")
+    assert final_response.status_code == 404
+```
+
+## Testing Best Practices
+
+1. Make tests independent of each other
+2. Clean up test data after each test
+3. Use descriptive test names that explain the scenario being tested
+4. Group tests logically by endpoint or feature
+5. Test both synchronous and asynchronous endpoints appropriately
+6. Use fixtures for common setup and teardown
+7. Validate all aspects of the response (status code, headers, body format, data)
+8. Test with realistic data that matches frontend usage patterns
+
+## Related Rules
+
+See [api-contract-rule.mdc] for details on the API contract expectations.
+See [testing-guidelines.mdc] for general testing practices.

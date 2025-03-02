@@ -39,23 +39,23 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
         result_type_mapping = {
             "LR": {
                 "name": "Latest Results",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/homepage_new.php"
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy"
             },
             "BP": {
                 "name": "Best Performer",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/homepage_new.php?tab=BP"
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=BP&subType=yoy"
             },
             "WP": {
                 "name": "Worst Performer",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/homepage_new.php?tab=WP"
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=WP&subType=yoy"
             },
             "PT": {
                 "name": "Positive Turnaround",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/homepage_new.php?tab=PT"
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=PT&subType=yoy"
             },
             "NT": {
                 "name": "Negative Turnaround",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/homepage_new.php?tab=NT"
+                "url": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=NT&subType=yoy"
             }
         }
         

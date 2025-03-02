@@ -575,7 +575,7 @@ async def extract_know_before_invest_data(driver, company_name):
         logger.error(f"Error in extract_know_before_invest_data: {str(e)}")
         return {}
 
-async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5):
+async def scrape_earnings_list(driver, url, db_collection=None, max_companies=None):
     """
     Scrape earnings list from MoneyControl and extract detailed stock metrics for each company.
     
@@ -583,7 +583,7 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5)
         driver: Selenium WebDriver instance
         url: URL of the earnings list page
         db_collection: MongoDB collection to store the results
-        max_companies: Maximum number of companies to scrape (default 5)
+        max_companies: Maximum number of companies to scrape (default None = all companies)
         
     Returns:
         List of dictionaries containing company data
@@ -626,9 +626,13 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5)
         
         logger.info(f"Found {len(result_cards)} result cards to process")
         
-        # Limit the number of companies to process
-        companies_to_process = min(len(result_cards), max_companies)
-        logger.info(f"Will process {companies_to_process} companies (max_companies={max_companies})")
+        # Limit the number of companies to process if max_companies is specified
+        if max_companies is not None:
+            companies_to_process = min(len(result_cards), max_companies)
+            logger.info(f"Will process {companies_to_process} companies (max_companies={max_companies})")
+        else:
+            companies_to_process = len(result_cards)
+            logger.info(f"Will process all {companies_to_process} companies")
         
         # Extract basic financial data from result cards
         logger.info("Extracting basic financial data from result cards")
@@ -749,13 +753,29 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5)
                 # Now navigate to the stock page and extract more detailed data
                 logger.info(f"Navigating to stock URL: {stock_url}")
                 try:
-                    driver.get(stock_url)
+                    # Store current window handle
+                    main_window = driver.current_window_handle
+                    
+                    # Open a new tab with the stock URL
+                    logger.info("Opening new tab for stock details")
+                    driver.execute_script("window.open(arguments[0], '_blank');", stock_url)
+                    
+                    # Switch to the new tab
+                    windows = driver.window_handles
+                    driver.switch_to.window(windows[-1])
+                    
+                    # Wait for the stock page to load
                     WebDriverWait(driver, 10).until(
                         EC.presence_of_element_located((By.CSS_SELECTOR, "div.inid_name, h1.pcstname"))
                     )
                     
                     # Extract more detailed data using scrape_single_stock
                     detailed_data = await scrape_single_stock(driver, stock_url)
+                    
+                    # Close the tab and switch back to the main window
+                    logger.info("Closing stock details tab and returning to main page")
+                    driver.close()
+                    driver.switch_to.window(main_window)
                     
                     # Merge preliminary and detailed data
                     if detailed_data:
@@ -803,19 +823,19 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5)
                     results.append(document)
                     logger.info(f"Successfully processed {company_name}")
                     
-                    # Navigate back to the earnings list page
-                    driver.get(url)
+                    # Navigate back to the earnings list page - No need to navigate back since we're using tabs
+                    # driver.get(url)
                     try:
-                        WebDriverWait(driver, 10).until(
-                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li.rapidResCardWeb_gryCard__hQigs"))
+                        # Make sure we're still on the right page
+                        WebDriverWait(driver, 5).until(
+                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li.rapidResCardWeb_gryCard__hQigs, div.resultCard, div.tab_container_results div.resultCardComp"))
                         )
-                    except:
-                        try:
-                            WebDriverWait(driver, 10).until(
-                                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.resultCard"))
-                            )
-                        except:
-                            pass
+                    except Exception as e:
+                        logger.warning(f"Main page check failed, refreshing: {e}")
+                        driver.get(url)
+                        WebDriverWait(driver, 10).until(
+                            EC.presence_of_all_elements_located((By.CSS_SELECTOR, "li.rapidResCardWeb_gryCard__hQigs, div.resultCard, div.tab_container_results div.resultCardComp"))
+                        )
                     
                 except Exception as e:
                     logger.error(f"Error during detailed scraping for {company_name}: {e}")
@@ -839,9 +859,19 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=5)
                     
                     results.append(document)
                     
-                    # Navigate back to the earnings list page
-                    driver.get(url)
-                    await asyncio.sleep(3)  # Simple wait for page to reload
+                    # Make sure we're back on the main window if an error occurred
+                    try:
+                        if driver.current_window_handle != main_window:
+                            driver.close()
+                            driver.switch_to.window(main_window)
+                    except Exception as tab_e:
+                        logger.warning(f"Error handling window after exception: {tab_e}")
+                        # If we can't recover, try to get back to the earnings page
+                        try:
+                            driver.get(url)
+                            await asyncio.sleep(3)  # Simple wait for page to reload
+                        except Exception as recover_e:
+                            logger.error(f"Failed to recover main page: {recover_e}")
             
             except Exception as e:
                 logger.error(f"Error processing card {i}: {e}")
