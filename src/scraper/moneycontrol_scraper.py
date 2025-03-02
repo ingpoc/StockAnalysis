@@ -814,14 +814,62 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=No
                     
                     # Insert into MongoDB if collection is provided
                     if db_collection is not None:
-                        await db_collection.update_one(
-                            {"url": stock_url},
-                            {"$set": document},
-                            upsert=True
-                        )
+                        # First, check if we already have this company in the database
+                        existing_company = await db_collection.find_one({"company_name": company_name})
+                        
+                        if existing_company is not None:
+                            # Company exists - check if it has the right structure
+                            if "financial_metrics" in existing_company:
+                                # Has the right structure - check if this quarter already exists
+                                quarter = financial_data.get("quarter")
+                                existing_quarters = [metric.get("quarter") for metric in existing_company.get("financial_metrics", []) if metric.get("quarter")]
+                                
+                                if quarter and quarter in existing_quarters:
+                                    # Update the existing quarter
+                                    logger.info(f"Updating existing quarter {quarter} for {company_name}")
+                                    await db_collection.update_one(
+                                        {
+                                            "company_name": company_name, 
+                                            "financial_metrics.quarter": quarter
+                                        },
+                                        {"$set": {"financial_metrics.$": financial_data}}
+                                    )
+                                else:
+                                    # Add as new quarter
+                                    logger.info(f"Adding new quarter data for {company_name}")
+                                    await db_collection.update_one(
+                                        {"company_name": company_name},
+                                        {"$push": {"financial_metrics": financial_data}}
+                                    )
+                            else:
+                                # Has the old structure - convert to new structure
+                                logger.info(f"Converting to new structure for {company_name}")
+                                await db_collection.update_one(
+                                    {"company_name": company_name},
+                                    {"$set": {
+                                        "symbol": symbol,
+                                        "financial_metrics": [financial_data],
+                                        "timestamp": datetime.now()
+                                    }}
+                                )
+                        else:
+                            # Create new company document with the right structure
+                            logger.info(f"Creating new company document for {company_name}")
+                            new_document = {
+                                "company_name": company_name,
+                                "symbol": symbol,
+                                "financial_metrics": [financial_data],
+                                "timestamp": datetime.now()
+                            }
+                            await db_collection.insert_one(new_document)
                     
-                    results.append(document)
-                    logger.info(f"Successfully processed {company_name}")
+                    # Add to results list
+                    results.append({
+                        "company_name": company_name,
+                        "symbol": symbol,
+                        "financial_metrics": financial_data,
+                        "timestamp": datetime.now()
+                    })
                     
                     # Navigate back to the earnings list page - No need to navigate back since we're using tabs
                     # driver.get(url)
