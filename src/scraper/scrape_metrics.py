@@ -226,6 +226,130 @@ def scrape_financial_metrics(driver, stock_link):
             except Exception as e:
                 logger.debug(f"Error extracting symbol from title: {str(e)}")
 
+        # Extract KnowBeforeYouInvest section data
+        try:
+            logger.info("Starting extraction of KnowBeforeYouInvest section data")
+            
+            # Log the HTML structure of the KnowBeforeYouInvest section for debugging
+            try:
+                know_before_section = detailed_soup.select_one('#knowBeforeInvest')
+                if know_before_section:
+                    logger.info("Found #knowBeforeInvest section")
+                    # Log a sample of the HTML to help debug selectors
+                    logger.info(f"KnowBeforeYouInvest section HTML sample: {str(know_before_section)[:500]}...")
+                else:
+                    logger.warning("Could not find #knowBeforeInvest section")
+            except Exception as e:
+                logger.warning(f"Error examining KnowBeforeYouInvest section: {str(e)}")
+            
+            # Strengths - try multiple selectors
+            strengths_selectors = [
+                '#swot_ls > a > strong',
+                '.swotls strong',
+                '#swot_ls strong',
+                '.swot_ls strong'
+            ]
+            
+            for selector in strengths_selectors:
+                strengths_element = detailed_soup.select_one(selector)
+                if strengths_element:
+                    metrics["strengths"] = strengths_element.text.strip()
+                    logger.info(f"Found strengths with selector '{selector}': {metrics['strengths']}")
+                    break
+            
+            if not metrics["strengths"]:
+                logger.warning(f"No strengths element found with any of these selectors: {strengths_selectors}")
+            
+            # Weaknesses - try multiple selectors
+            weaknesses_selectors = [
+                '#swot_lw > a > strong',
+                '.swotlw strong',
+                '#swot_lw strong',
+                '.swot_lw strong'
+            ]
+            
+            for selector in weaknesses_selectors:
+                weaknesses_element = detailed_soup.select_one(selector)
+                if weaknesses_element:
+                    metrics["weaknesses"] = weaknesses_element.text.strip()
+                    logger.info(f"Found weaknesses with selector '{selector}': {metrics['weaknesses']}")
+                    break
+            
+            if not metrics["weaknesses"]:
+                logger.warning(f"No weaknesses element found with any of these selectors: {weaknesses_selectors}")
+            
+            # Technicals trend - try multiple selectors
+            technicals_selectors = [
+                '#techAnalysis a[style*="flex"]',
+                '#techAnalysis a',
+                '.techAnalysis a'
+            ]
+            
+            for selector in technicals_selectors:
+                technicals_element = detailed_soup.select_one(selector)
+                if technicals_element:
+                    metrics["technicals_trend"] = technicals_element.text.strip()
+                    logger.info(f"Found technicals trend with selector '{selector}': {metrics['technicals_trend']}")
+                    break
+            
+            if not metrics["technicals_trend"]:
+                logger.warning(f"No technicals trend element found with any of these selectors: {technicals_selectors}")
+            
+            # Piotroski score - try multiple selectors
+            piotroski_selectors = [
+                'div:nth-child(2) div.fpioi div.nof',
+                '.fpioi .nof',
+                '#knowBeforeInvest .fpioi .nof'
+            ]
+            
+            for selector in piotroski_selectors:
+                piotroski_element = detailed_soup.select_one(selector)
+                if piotroski_element:
+                    metrics["piotroski_score"] = piotroski_element.text.strip()
+                    logger.info(f"Found Piotroski score with selector '{selector}': {metrics['piotroski_score']}")
+                    break
+            
+            if not metrics["piotroski_score"]:
+                logger.warning(f"No Piotroski score element found with any of these selectors: {piotroski_selectors}")
+            
+            # CAGR values - try multiple selectors
+            revenue_cagr_selectors = [
+                'tr:-soup-contains("Revenue") td:nth-child(2)',
+                'tr:contains("Revenue") td:nth-child(2)',
+                '#knowBeforeInvest tr:contains("Revenue") td:nth-child(2)'
+            ]
+            
+            for selector in revenue_cagr_selectors:
+                try:
+                    revenue_cagr_element = detailed_soup.select_one(selector)
+                    if revenue_cagr_element:
+                        metrics["revenue_growth_3yr_cagr"] = revenue_cagr_element.text.strip()
+                        logger.info(f"Found revenue CAGR with selector '{selector}': {metrics['revenue_growth_3yr_cagr']}")
+                        break
+                except Exception as e:
+                    logger.warning(f"Error with selector '{selector}': {str(e)}")
+            
+            if not metrics["revenue_growth_3yr_cagr"]:
+                logger.warning(f"No revenue CAGR element found with any of these selectors: {revenue_cagr_selectors}")
+            
+            # Try to find all tables and look for CAGR data
+            try:
+                tables = detailed_soup.select('table')
+                logger.info(f"Found {len(tables)} tables on the page")
+                
+                for i, table in enumerate(tables):
+                    logger.info(f"Table {i+1} content sample: {str(table)[:200]}...")
+                    
+                    # Look for CAGR related text in the table
+                    if 'CAGR' in str(table) or 'Revenue' in str(table) or 'Profit' in str(table):
+                        logger.info(f"Table {i+1} might contain CAGR data")
+            except Exception as e:
+                logger.warning(f"Error examining tables: {str(e)}")
+            
+            logger.info("Completed extraction of KnowBeforeYouInvest section data")
+        except Exception as e:
+            logger.warning(f"Error extracting KnowBeforeYouInvest data: {str(e)}")
+
         # Close the tab and switch back to the original window
         driver.close()
         driver.switch_to.window(original_window)
