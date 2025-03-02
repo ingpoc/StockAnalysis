@@ -9,179 +9,123 @@ globs: src/**/*.py, .env, requirements.txt, README.md
 alwaysApply: false
 ---
 
-# General Development Guidelines for StockAnalysis
+# AI Development Guidelines
 
-## 1. Project Structure
-```markdown
+## Purpose
+This rule provides guidance for AI assistance in developing the StockAnalysis application, covering key principles for project organization, code structure, and best practices.
+
+## Project Structure
+```
 StockAnalysis/
 ├── src/                # Source code
-│   ├── api/            # API endpoints
-│   ├── models/         # Data models
-│   ├── routers/        # API routers
-│   ├── schemas/        # Pydantic schemas
-│   ├── scraper/        # Web scrapers
-│   ├── services/       # Business logic
-│   └── utils/          # Utility functions
 ├── tests/              # Test files
-├── tools/              # Utility tools
-│   └── scripts/        # Utility scripts
+├── tools/scripts/      # Utility scripts
 ├── logs/               # Log files
-├── data/               # Data files
 ├── db_backups/         # Database backups
 ├── docs/               # Documentation
-└── .env                # Environment variables
 ```
 
-## 1a. File Organization Rules
-- ✓ All test files must be placed in the `tests/` directory
-- ✓ Test files should be named with a `test_` prefix (e.g., `test_api.py`)
-- ✓ Utility scripts for database management should be placed in `tools/scripts/`
-- ✓ Log files should be stored in the `logs/` directory
-- ✓ Database backup files should be stored in `db_backups/`
-- ✓ Data files (CSV, JSON, etc.) should be stored in `data/`
-- ✓ Documentation files should be stored in `docs/`
-- ✓ Never create utility scripts or test files at the root level
+## Key Development Principles
+- ✓ Follow the project directory structure for all file placement
+- ✓ Use absolute imports rather than relative imports
+- ✓ Implement proper error handling with specific exceptions
+- ✓ Maintain async operations throughout the application
+- ✓ For database operations, refer to the database-validation rule
 
-## 2. Code Organization Rules
-- ✓ Keep endpoints in dedicated files
-- ✓ Separate business logic in services
-- ✓ Define models before implementation
-- ✓ Centralize utility functions
-- ✓ Maintain clean imports
+## Resource Management Best Practices
+- ✓ Initialize all resources to None at the start of functions
+- ✓ Use try/except/finally blocks for all resource operations
+- ✓ Check for None before calling methods on objects
+- ✓ Handle exceptions during resource cleanup
+- ✓ Log all resource lifecycle events (creation, use, cleanup)
+- ✓ Properly close async resources with error handling
 
-## 2a. Import Path Conventions
-- ✓ Always use absolute imports from the root package
-- ✓ Import format for internal packages: `from src.{module} import {name}`
-- ✓ Define __init__.py in all packages with proper exports
-- ✓ Router imports example:
-  ```python
-  # In src/api/__init__.py
-  from fastapi import APIRouter
-  
-  api_router = APIRouter(prefix="/api/v1")
-  
-  # In src/api/endpoints/module.py
-  from src.api import api_router
-  ```
-- ✓ Never use relative imports (.module) unless in the same package
-
-## 3. Database Collections
-```markdown
-stock_data (Database)
-├── ai_analysis           # AI Insights storage
-├── detailed_financials   # Market data by quarter
-├── holdings             # User portfolio data
-├── ipo_data             # IPO information
-└── settings             # Application settings
-```
-
-## 4. Performance Requirements
-- ✓ Response time < 500ms
-- ✓ Use connection pooling
-- ✓ Implement proper indexing
-- ✓ Cache frequent data
-- ✓ Use async operations
-
-## 5. Error Handling Standards
+## Async Error Handling
 ```python
-# Always use custom exceptions
-class CustomException(Exception):
-    pass
-
-# Proper error responses
-{
-    "status_code": 400,
-    "detail": "Error description",
-    "timestamp": "2024-02-28T12:00:00Z"
-}
+async def async_operation():
+    resource = None
+    try:
+        # Initialize resource
+        resource = await create_resource()
+        
+        # Use resource
+        result = await resource.operation()
+        return result
+        
+    except SpecificError as e:
+        logger.error(f"Specific error: {e}")
+        return fallback_value
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return None
+    finally:
+        # Clean up resource safely
+        if resource:
+            try:
+                await resource.close()
+            except Exception as e:
+                logger.warning(f"Error closing resource: {e}")
 ```
 
-## 5a. API Response Status Codes
-- ✓ GET success: always return 200 OK
-- ✓ POST success: always return 201 Created
-- ✓ PUT/PATCH success: always return 200 OK
-- ✓ DELETE success: always return 200 OK
-- ✓ Validation errors: always return 422 Unprocessable Entity
-- ✓ Not found: always return 404 Not Found
-- ✓ Server errors: always return 500 Internal Server Error
+## API Implementation
+- ✓ Register all endpoints with the central router
+- ✓ Use appropriate status codes (200 for GET, 201 for POST)
+- ✓ Implement validation with Pydantic models
+- ✓ Handle errors with proper status codes and messages
+- ✓ Document all endpoints with meaningful descriptions
 
-## 6. Documentation Requirements
-- ✓ Document all functions
-- ✓ Maintain API documentation
-- ✓ Update README.md
-- ✓ Comment complex logic
-- ✓ Keep .env.example updated
+## Database Guidelines
+- ✓ Use the MongoDB collections defined in the project
+- ✓ For validation, refer to `database-validation.mdc`
+- ✓ Implement proper error handling for database operations
+- ✓ Use connection pooling for better performance
+- ✓ Implement proper indexing for frequently queried fields
+- ✓ Always initialize db_clients to None and close in finally blocks
 
-# 7. API Implementation Rules
-- ✓ Each endpoint module must include this at the top:
-  ```python
-  from src.api import api_router
-  ```
-- ✓ Register endpoints with appropriate tags:
-  ```python
-  @api_router.get("/path", tags=["category"])
-  ```
-- ✓ All endpoints must be imported in main.py
-- ✓ Sample router registration in main.py:
-  ```python
-  # Import all endpoint modules to register routes
-  from src.api.endpoints import portfolio, market_data, stock_data
-  
-  # Include router in app
-  app.include_router(api_router)
-  ```
-- ✓ For endpoints that need to be accessed via multiple URL paths, include the router multiple times with different prefixes:
-  ```python
-  # Example for analysis endpoints that need both /stock/{symbol}/analysis-history
-  # and /analysis/{analysis_id} paths
-  router.include_router(analysis_router, prefix="/stock", tags=["analysis"])
-  router.include_router(analysis_router, prefix="/analysis", tags=["analysis"])
-  ```
+## Testing Approach
+- ✓ For testing guidelines, refer to `testing-guidelines.mdc`
+- ✓ For database validation, prefer direct MongoDB shell validation
+- ✓ Use the validation utility script at `tools/scripts/validate_database.py`
+- ✓ Keep tests isolated from production data by passing None instead of collections
 
-## 8. Testing Requirements
+## Example API Endpoint with Proper Error Handling
+```python
+from src.api import api_router
+from src.models.schemas import StockResponse
+from src.services.stock_service import StockService
+from src.db.client import get_mongodb_client
 
-- ✓ Test error handling scenarios
-- ✓ All test files must be placed in the `tests/` directory
-- ✓ Test files should follow the naming convention `test_*.py`
-- ✓ Debug utilities should be placed in the `tests/` directory
+@api_router.get("/stock/{symbol}", response_model=StockResponse)
+async def get_stock(symbol: str):
+    """
+    Get detailed information for a specific stock.
+    """
+    db_client = None
+    try:
+        # Initialize services and resources
+        db_client = await get_mongodb_client()
+        stock_service = StockService(db_client)
+        
+        # Get the stock details
+        return await stock_service.get_stock_details(symbol)
+        
+    except ValueError as e:
+        # Handle validation errors
+        raise HTTPException(status_code=400, detail=str(e))
+    except LookupError as e:
+        # Handle not found errors
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        # Handle unexpected errors
+        logger.error(f"Error retrieving stock {symbol}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+        # Clean up resources
+        if db_client:
+            try:
+                await db_client.close()
+            except Exception as e:
+                logger.warning(f"Error closing database connection: {e}")
+```
 
-## 9. Development Process
-- ✓ Check documentation first
-- ✓ Search codebase for context
-- ✓ Verify dependencies
-- ✓ Test thoroughly
-- ✓ Review before commit
-
-## 10. Third-Party Integration
-- ✓ Check official docs
-- ✓ Review GitHub issues
-- ✓ Test edge cases
-- ✓ Handle API failures
-- ✓ Monitor usage limits
-
-## 11. Utility Scripts
-- ✓ All utility scripts should be placed in `tools/scripts/`
-- ✓ Utility scripts should have a clear purpose and documentation
-- ✓ Log files generated by scripts should be stored in `logs/`
-- ✓ Database backup scripts should store backups in `db_backups/`
-- ✓ Scripts should use the same configuration as the main application
-
----
-
-**Important Reminders**:
-1. Never commit sensitive data
-2. Always use async operations
-3. Implement proper logging
-4. Handle errors gracefully
-5. Keep documentation updated
-6. Never create files at the root level without a specific reason
-7. Follow the project structure for all new files
-
-**Before Making Changes**:
-1. Understand component hierarchy
-2. Check existing implementations
-3. Verify type definitions
-4. Review related files
-5. Test all scenarios
-
-These guidelines ensure consistent, maintainable, and reliable code across the StockAnalysis application.
+These guidelines ensure consistent, maintainable, and robust code across the StockAnalysis application.

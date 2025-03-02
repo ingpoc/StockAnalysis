@@ -3,7 +3,7 @@ description: Testing Guidelines
 globs: tests/*.py
 alwaysApply: false
 ---
- ---
+---
 description: Testing Guidelines
 globs: tests/*.py
 alwaysApply: false
@@ -11,14 +11,23 @@ alwaysApply: false
 
 # Testing Guidelines
 
-## 1. Test Organization
-- ✓ All test files must be placed in the `tests/` directory
-- ✓ Test files should be named with a `test_` prefix (e.g., `test_api.py`)
-- ✓ Debug utilities should be placed in the `tests/` directory
-- ✓ Test files should be organized by component or functionality
-- ✓ Each test file should focus on a specific component or functionality
+## Purpose
+This rule provides guidance on how to effectively test the StockAnalysis application, with a focus on maintaining high code quality and reliability.
 
-## 2. Test File Structure
+## Key Principles
+- ✓ Organize tests by component or functionality in the `tests/` directory
+- ✓ Follow the Arrange-Act-Assert pattern in test implementation
+- ✓ Use mock objects for external dependencies
+- ✓ Test both success and error cases
+- ✓ For database validation, use direct MongoDB validation rather than test files
+- ✓ Keep tests isolated from production data
+
+## Test Coverage Requirements
+- API endpoints: 90% coverage
+- Services: 85% coverage
+- Utilities: 80% coverage
+
+## Test File Structure
 ```python
 """
 Test module for [component].
@@ -38,53 +47,78 @@ def test_specific_functionality():
     assert result == expected_result
 ```
 
-## 3. Test Coverage Requirements
-- ✓ Unit tests for all services (85% coverage)
-- ✓ API endpoint tests (90% coverage)
-- ✓ Utilities tests (80% coverage)
-- ✓ Mock external dependencies
-- ✓ Test error handling scenarios
-- ✓ Test edge cases
+## Resource Management
+```python
+# Initialize resources to None at the beginning
+driver = None
+db_client = None
 
-## 4. Testing Best Practices
-- ✓ Use descriptive test names
-- ✓ Follow the Arrange-Act-Assert pattern
-- ✓ Keep tests independent
-- ✓ Avoid test interdependencies
-- ✓ Use appropriate assertions
-- ✓ Mock external dependencies
-- ✓ Use fixtures for common setup
-- ✓ Clean up after tests
+try:
+    # Initialize resources inside try block
+    db_client = AsyncIOMotorClient(MONGO_URL)
+    driver = setup_webdriver()
+    
+    # Test code here
+    
+except Exception as e:
+    logger.error(f"Test error: {str(e)}")
+    assert False, f"Test failed: {str(e)}"
+finally:
+    # Safely clean up resources
+    if driver:
+        driver.quit()
+    if db_client:
+        try:
+            await db_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing DB connection: {e}")
+    logger.info("Test resources cleaned up")
+```
 
-## 5. API Testing
-- ✓ Test all API endpoints
-- ✓ Test success and error cases
-- ✓ Verify response status codes
-- ✓ Verify response body structure
-- ✓ Test with various input parameters
-- ✓ Test authentication and authorization
+## Database Testing
+For database validation, refer to the `database-validation.mdc` rule which provides:
+- Commands for using MongoDB shell directly
+- API-based validation techniques
+- Automated validation using the utility script
 
-## 6. Database Testing
-- ✓ Use a test database
-- ✓ Reset the database before each test
-- ✓ Test CRUD operations
-- ✓ Test queries and filters
-- ✓ Test transactions
-- ✓ Test error handling
+## Test Isolation
+```python
+# Set up MongoDB connection - for verification only, not for saving data
+db_client = AsyncIOMotorClient(mongo_uri)
+db = client.stock_data
+collection = db.detailed_financials
 
-## 7. Scraper Testing
-- ✓ Mock external websites
-- ✓ Test with sample HTML
-- ✓ Test parsing logic
-- ✓ Test error handling
-- ✓ Test rate limiting
-- ✓ Test authentication
+# Run the scraper without passing the MongoDB collection to avoid saving data
+results = await scrape_function(url, None)  # Pass None instead of collection
 
-## 8. Debug Utilities
-- ✓ Debug utilities should be placed in the `tests/` directory
-- ✓ Debug utilities should be named with a `debug_` prefix
-- ✓ Debug utilities should have clear documentation
-- ✓ Debug utilities should log relevant information
-- ✓ Debug utilities should not be included in regular test runs
+# Verify data was not written (check count before/after)
+count_before = await collection.count_documents({})
+# Run test operations
+count_after = await collection.count_documents({})
+assert count_before == count_after, "Test should not write to database"
+```
+
+## Async Testing Best Practices
+- Always initialize async resources to None before try blocks
+- Use try/except/finally for proper resource cleanup
+- Check if resources exist before awaiting them
+- Handle exceptions during resource cleanup
+- For test fixtures, use pytest-asyncio's async fixtures
+
+## API Testing Example
+```python
+def test_get_stock_endpoint():
+    """Test the GET /api/v1/stock/{symbol} endpoint."""
+    # Arrange
+    symbol = "AAPL"
+    
+    # Act
+    response = client.get(f"/api/v1/stock/{symbol}")
+    
+    # Assert
+    assert response.status_code == 200
+    assert "company_name" in response.json()
+    assert "financial_metrics" in response.json()
+```
 
 These guidelines ensure consistent and effective testing across the application.

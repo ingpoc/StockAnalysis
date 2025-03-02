@@ -13,5 +13,10 @@ logging.basicConfig(
     ]
 )
 
+# Disable file logging for all loggers
+for handler in logging.root.handlers[:]:
+    if not isinstance(handler, logging.StreamHandler):
+        logging.root.removeHandler(handler)
+
 # Create a logger instance that can be imported by other modules
 logger = logging.getLogger("stock_analysis") 

@@ -4,16 +4,24 @@ globs: src/**/portfolio*.py, src/models/holding*.py, src/api/endpoints/portfolio
 alwaysApply: false
 ---
 ---
-description: User Portfolio Management
-globs: src/models/portfolio.py, src/services/portfolio_service.py, src/api/endpoints/portfolio.py
+description: Portfolio Management Guidelines
+globs: src/**/portfolio*.py, src/models/holding*.py, src/api/endpoints/portfolio*.py, src/services/portfolio*.py
 alwaysApply: false
 ---
 
-# User Portfolio Management
+# Portfolio Management Guidelines
 
-## 1. Data Model
-The portfolio data model represents a user's stock holdings.
+## Purpose
+This rule provides guidance on the implementation, processing, and management of user portfolio data in the StockAnalysis application.
 
+## Key Principles
+- ✓ Define appropriate portfolio models for tracking holdings
+- ✓ Implement comprehensive portfolio services for CRUD operations
+- ✓ Use consistent API endpoints for accessing portfolio data
+- ✓ Follow the file organization structure for all portfolio-related files
+- ✓ Support import/export functionality for holdings data
+
+## Data Structure
 ```python
 class Holding(BaseModel):
     symbol: str
@@ -21,90 +29,36 @@ class Holding(BaseModel):
     quantity: int
     average_price: float
     current_price: Optional[float] = None
-    current_value: Optional[float] = None
     profit_loss: Optional[float] = None
     profit_loss_percent: Optional[float] = None
-    purchase_date: Optional[datetime] = None
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "symbol": "AAPL",
-                "company_name": "Apple Inc.",
-                "quantity": 10,
-                "average_price": 150.25,
-                "current_price": 175.50,
-                "current_value": 1755.00,
-                "profit_loss": 252.50,
-                "profit_loss_percent": 16.80,
-                "purchase_date": "2023-01-15T00:00:00Z"
-            }
-        }
 ```
 
-## 2. Portfolio Service
-The portfolio service handles operations related to user portfolios.
-
-```python
-class PortfolioService:
-    def __init__(self, db: Database):
-        self.db = db
-        self.collection = db.holdings
-    
-    async def get_holdings(self) -> List[Holding]:
-        # Implementation
-        
-    async def add_holding(self, holding: Holding) -> str:
-        # Implementation
-        
-    async def update_holding(self, holding_id: str, holding: Holding) -> bool:
-        # Implementation
-        
-    async def delete_holding(self, holding_id: str) -> bool:
-        # Implementation
-        
-    async def calculate_portfolio_metrics(self) -> Dict[str, Any]:
-        # Implementation
-```
-
-## 3. API Endpoints
-Portfolio data is exposed through the following endpoints:
-
+## API Endpoints
 - `GET /api/v1/portfolio/holdings` - Get all holdings
 - `POST /api/v1/portfolio/holdings` - Add a new holding
 - `PUT /api/v1/portfolio/holdings/{id}` - Update a holding
 - `DELETE /api/v1/portfolio/holdings/{id}` - Delete a holding
 - `GET /api/v1/portfolio/metrics` - Get portfolio metrics
 
-## 4. File Organization
-- ✓ Portfolio models should be defined in `src/models/portfolio.py`
-- ✓ Portfolio services should be implemented in `src/services/portfolio_service.py`
-- ✓ Portfolio API endpoints should be defined in `src/api/endpoints/portfolio.py`
-- ✓ Portfolio data tests should be placed in `tests/test_portfolio.py`
-- ✓ Portfolio data utilities should be placed in `src/utils/portfolio_utils.py`
-- ✓ Portfolio data scripts should be placed in `tools/scripts/`
-- ✓ CSV import/export utilities should be placed in `tools/scripts/`
+## File Organization
+- ✓ Models: `src/models/portfolio.py`
+- ✓ Services: `src/services/portfolio_service.py`
+- ✓ API endpoints: `src/api/endpoints/portfolio.py`
+- ✓ Tests: `tests/test_portfolio.py`
+- ✓ Utilities: `src/utils/portfolio_utils.py`
+- ✓ Import/export scripts: `tools/scripts/import_portfolio.py`
 
-## 5. Data Processing Rules
-- ✓ Validate all input data
-- ✓ Calculate derived values (current_value, profit_loss, etc.)
+## Data Processing
+- ✓ Validate all input data before storage
+- ✓ Calculate derived values (current_value, profit_loss)
 - ✓ Update current prices regularly
 - ✓ Format currency values consistently
-- ✓ Sort holdings by appropriate metrics
-- ✓ Handle missing data gracefully
+- ✓ Support CSV import/export functionality
 
-## 6. Import/Export Functionality
-- ✓ Support CSV import/export
-- ✓ Validate imported data
-- ✓ Handle duplicate entries
-- ✓ Provide clear error messages for invalid data
-- ✓ Support batch operations
-
-## 7. Error Handling
-- ✓ Return 404 for unknown holding IDs
-- ✓ Validate input data
+## Error Handling
+- ✓ Return appropriate status codes (404 for unknown holdings)
+- ✓ Validate input data against schema
 - ✓ Log all data processing errors
 - ✓ Provide meaningful error messages
-- ✓ Handle database errors gracefully
 
 These guidelines ensure consistent handling of portfolio data across the application.

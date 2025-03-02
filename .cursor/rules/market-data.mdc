@@ -4,16 +4,24 @@ globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py,
 alwaysApply: false
 ---
 ---
-description: Market Data Integration
-globs: src/models/market.py, src/services/market_service.py, src/api/endpoints/market.py
+description: Market Data Guidelines
+globs: src/**/market*.py, src/api/endpoints/market*.py, src/services/market*.py, src/models/market*.py
 alwaysApply: false
 ---
 
-# Market Data Integration
+# Market Data Guidelines
 
-## 1. Data Model
-The market data model represents overall market information and indices.
+## Purpose
+This rule provides guidance on the implementation, processing, and management of market data in the StockAnalysis application.
 
+## Key Principles
+- ✓ Define comprehensive market data models for indices and sectors
+- ✓ Implement market data services for retrieving and updating information
+- ✓ Use consistent API endpoints for accessing market data
+- ✓ Follow the file organization structure for all market-related files
+- ✓ Update and cache market data efficiently
+
+## Data Structures
 ```python
 class MarketData(BaseModel):
     date: datetime
@@ -22,113 +30,32 @@ class MarketData(BaseModel):
     top_gainers: List[StockSummary]
     top_losers: List[StockSummary]
     most_active: List[StockSummary]
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "date": "2023-02-28T16:00:00Z",
-                "indices": {
-                    "NIFTY 50": {"value": 17500.25, "change": 0.75},
-                    "SENSEX": {"value": 59500.50, "change": 0.80}
-                },
-                "sectors": {
-                    "Technology": {"change": 1.2, "stocks": 45},
-                    "Banking": {"change": -0.5, "stocks": 30}
-                },
-                "top_gainers": [...],
-                "top_losers": [...],
-                "most_active": [...]
-            }
-        }
 ```
 
-## 2. Index Data
-Index data represents a specific market index.
-
-```python
-class IndexData(BaseModel):
-    value: float
-    change: float
-    previous_close: Optional[float] = None
-    open: Optional[float] = None
-    high: Optional[float] = None
-    low: Optional[float] = None
-    volume: Optional[int] = None
-```
-
-## 3. Sector Data
-Sector data represents performance of a specific market sector.
-
-```python
-class SectorData(BaseModel):
-    change: float
-    stocks: int
-    market_cap: Optional[float] = None
-    volume: Optional[int] = None
-    top_performers: Optional[List[StockSummary]] = None
-```
-
-## 4. Stock Summary
-Stock summary represents a simplified view of a stock.
-
-```python
-class StockSummary(BaseModel):
-    symbol: str
-    company_name: str
-    current_price: float
-    change: float
-    change_percent: float
-    volume: Optional[int] = None
-```
-
-## 5. Market Service
-The market service handles operations related to market data.
-
-```python
-class MarketService:
-    def __init__(self, db: Database):
-        self.db = db
-        self.collection = db.market_data
-    
-    async def get_latest_market_data(self) -> MarketData:
-        # Implementation
-        
-    async def get_market_data_by_date(self, date: datetime) -> Optional[MarketData]:
-        # Implementation
-        
-    async def update_market_data(self, data: MarketData) -> bool:
-        # Implementation
-```
-
-## 6. API Endpoints
-Market data is exposed through the following endpoints:
-
+## API Endpoints
 - `GET /api/v1/market/data` - Get latest market data
 - `GET /api/v1/market/data/{date}` - Get market data by date
 - `GET /api/v1/market/indices` - Get all indices
 - `GET /api/v1/market/sectors` - Get all sectors
 
-## 7. File Organization
-- ✓ Market models should be defined in `src/models/market.py`
-- ✓ Market services should be implemented in `src/services/market_service.py`
-- ✓ Market API endpoints should be defined in `src/api/endpoints/market.py`
-- ✓ Market data tests should be placed in `tests/test_market.py`
-- ✓ Market data utilities should be placed in `src/utils/market_utils.py`
-- ✓ Market data scripts should be placed in `tools/scripts/`
+## File Organization
+- ✓ Models: `src/models/market.py`
+- ✓ Services: `src/services/market_service.py`
+- ✓ API endpoints: `src/api/endpoints/market.py`
+- ✓ Tests: `tests/test_market.py`
+- ✓ Utilities: `src/utils/market_utils.py`
 
-## 8. Data Processing Rules
+## Data Processing
 - ✓ Update market data at regular intervals
 - ✓ Cache market data for quick access
 - ✓ Format percentage values consistently
 - ✓ Sort lists by appropriate metrics
 - ✓ Handle missing data gracefully
-- ✓ Implement proper error handling
 
-## 9. Error Handling
+## Error Handling
 - ✓ Handle API rate limits for external data sources
 - ✓ Log all data processing errors
 - ✓ Provide meaningful error messages
-- ✓ Implement retry logic for transient failures
 - ✓ Return appropriate HTTP status codes
 
 These guidelines ensure consistent handling of market data across the application.

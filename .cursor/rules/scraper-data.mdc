@@ -1,34 +1,34 @@
 ---
-description: Web Scraper Implementation
+description: Web Scraper Guidelines
 globs: src/scraper/*.py, src/routers/scraper.py, src/schemas/financial_data.py
 alwaysApply: false
 ---
- ---
-description: Web Scraper Implementation
+---
+description: Web Scraper Guidelines
 globs: src/scraper/*.py, src/routers/scraper.py, src/schemas/financial_data.py
 alwaysApply: false
 ---
 
-# Web Scraper Implementation
+# Web Scraper Guidelines
 
-## 1. Data Model
-The scraper data models represent financial data scraped from external sources.
+## Purpose
+This rule provides guidance on implementing and managing web scrapers for financial data collection in the StockAnalysis application.
 
+## Key Principles
+- ✓ Define appropriate data models for scrape requests and results
+- ✓ Implement scraper services with proper error handling
+- ✓ Follow ethical scraping practices (respect robots.txt, rate limiting)
+- ✓ Process and validate scraped data before storage
+- ✓ Organize scraper code in the appropriate directory structure
+- ✓ Implement multiple fallback strategies for data extraction
+- ✓ Properly manage resources (WebDriver, connections)
+
+## Data Structures
 ```python
 class ScrapeRequest(BaseModel):
     result_type: str  # "LR", "BP", "WP", "PT", "NT"
     url: Optional[str] = None
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "result_type": "LR",
-                "url": "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php"
-            }
-        }
-```
 
-```python
 class ScrapedFinancialData(BaseModel):
     company_name: str
     symbol: Optional[str] = None
@@ -36,81 +36,104 @@ class ScrapedFinancialData(BaseModel):
     financial_metrics: Dict[str, Any]
     quarter: str
     source: str
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "company_name": "Apple Inc.",
-                "symbol": "AAPL",
-                "result_date": "2023-01-25",
-                "financial_metrics": {
-                    "revenue": 97278000000,
-                    "net_profit": 24160000000,
-                    "eps": 1.52
-                },
-                "quarter": "Q1 2023",
-                "source": "MoneyControl"
-            }
-        }
 ```
 
-## 2. Scraper Service
-The scraper service handles operations related to web scraping.
-
+## Robust Data Extraction
 ```python
-class ScraperService:
-    def __init__(self, db: Database):
-        self.db = db
-        self.collection = db.financial_data
-    
-    async def scrape_moneycontrol(self, request: ScrapeRequest) -> List[ScrapedFinancialData]:
-        # Implementation
-        
-    async def save_scraped_data(self, data: List[ScrapedFinancialData]) -> int:
-        # Implementation
-        
-    async def get_available_quarters(self) -> List[str]:
-        # Implementation
+def extract_stock_symbol(driver, url, company_name):
+    """Extract stock symbol with multiple fallback strategies."""
+    try:
+        # Strategy 1: Try main selector
+        symbol_element = driver.find_element(By.CSS_SELECTOR, "main-selector")
+        if symbol_element:
+            return symbol_element.text.strip()
+            
+        # Strategy 2: Try alternative selector
+        symbol_element = driver.find_element(By.CSS_SELECTOR, "alt-selector")
+        if symbol_element:
+            return symbol_element.text.strip()
+            
+        # Strategy 3: Extract from breadcrumbs
+        breadcrumbs = driver.find_elements(By.CSS_SELECTOR, "breadcrumb-selector")
+        if breadcrumbs:
+            # Process breadcrumbs
+            pass
+            
+        # Strategy 4: Parse from page title
+        title = driver.title
+        if "(" in title and ")" in title:
+            return title.split("(")[1].split(")")[0].strip()
+            
+        # Strategy 5: Format company name as symbol
+        return format_as_symbol(company_name)
+            
+    except Exception as e:
+        logger.warning(f"Error extracting symbol: {e}")
+        # Return a reasonable fallback
+        return format_as_symbol(company_name)
 ```
 
-## 3. API Endpoints
-Scraper functionality is exposed through the following endpoints:
+## Resource Management
+```python
+driver = None
+try:
+    # Set up the driver
+    driver = setup_webdriver()
+    
+    # Use the driver
+    driver.get(url)
+    wait = WebDriverWait(driver, 30)
+    element = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "selector")))
+    
+    # Extract and process data
+    data = extract_data(driver)
+    
+except Exception as e:
+    logger.error(f"Scraping error: {e}")
+    return None
+finally:
+    # Clean up resources
+    if driver:
+        try:
+            driver.quit()
+        except Exception as e:
+            logger.warning(f"Error closing WebDriver: {e}")
+```
 
+## API Endpoints
 - `POST /api/v1/scraper/moneycontrol` - Scrape data from MoneyControl
 - `GET /api/v1/market/quarters` - Get available quarters
 
-## 4. File Organization
-- ✓ Scraper modules should be defined in `src/scraper/`
-- ✓ Scraper-specific utilities should be placed in `src/scraper/utils.py`
-- ✓ Scraper API endpoints should be defined in `src/routers/scraper.py`
-- ✓ Scraper data schemas should be defined in `src/schemas/financial_data.py`
-- ✓ Scraper tests should be placed in `tests/test_scraper.py`
-- ✓ Scraper debug utilities should be placed in `tests/debug_selectors.py`
-- ✓ Scraper login tests should be placed in `tests/test_login.py`
+## File Organization
+- ✓ Modules: `src/scraper/`
+- ✓ Utilities: `src/scraper/utils.py`
+- ✓ API endpoints: `src/routers/scraper.py`
+- ✓ Data schemas: `src/schemas/financial_data.py`
+- ✓ Tests: `tests/test_scraper.py`
 
-## 5. Scraper Implementation
+## Implementation Guidelines
 - ✓ Use BeautifulSoup for HTML parsing
 - ✓ Use Selenium for JavaScript-heavy pages
-- ✓ Implement proper error handling
+- ✓ Implement retry logic for transient failures
 - ✓ Handle rate limiting and blocking
-- ✓ Implement retry logic
-- ✓ Log all scraping operations
-- ✓ Respect robots.txt
+- ✓ Log all scraping operations for traceability
+- ✓ Take screenshots for debugging visual elements
+- ✓ Implement explicit waits for dynamic content
 
-## 6. Data Processing Rules
+## Data Processing
 - ✓ Clean and normalize scraped data
 - ✓ Convert string values to appropriate types
-- ✓ Handle missing or inconsistent data
-- ✓ Validate scraped data
-- ✓ Store raw data for debugging
-- ✓ Implement proper error handling
+- ✓ Validate data structure before storage
+- ✓ Store raw data for debugging purposes
+- ✓ Handle missing or inconsistent data gracefully
+- ✓ Implement multiple data extraction strategies
+- ✓ Log data extraction steps for debugging
 
-## 7. Error Handling
-- ✓ Handle network errors
-- ✓ Handle parsing errors
-- ✓ Handle authentication failures
-- ✓ Log all errors
-- ✓ Provide meaningful error messages
-- ✓ Implement retry logic for transient failures
+## Debugging Techniques
+- ✓ Save screenshots at critical points
+- ✓ Log the DOM state when extraction fails
+- ✓ Implement debug mode with verbose logging
+- ✓ Test with headless and headed browser modes
+- ✓ Log extracted values before processing
 
-These guidelines ensure consistent implementation of web scrapers across the application.
+These guidelines ensure ethical, effective, and robust web scraping for financial data collection.

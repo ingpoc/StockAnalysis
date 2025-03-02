@@ -3,7 +3,7 @@ description: Utility Scripts Organization
 globs: tools/scripts/*.py
 alwaysApply: false
 ---
- ---
+---
 description: Utility Scripts Organization
 globs: tools/scripts/*.py
 alwaysApply: false
@@ -11,24 +11,71 @@ alwaysApply: false
 
 # Utility Scripts Organization
 
-## 1. Script Organization
-- ✓ All utility scripts must be placed in the `tools/scripts/` directory
-- ✓ Scripts should have descriptive names
-- ✓ Scripts should be organized by functionality
-- ✓ Database management scripts should be prefixed with `db_`
-- ✓ Data import/export scripts should be prefixed with `import_` or `export_`
-- ✓ Cleanup scripts should be prefixed with `clean_`
-- ✓ Backup scripts should be prefixed with `backup_`
+## Purpose
+This rule provides guidance on organizing and implementing utility scripts for the StockAnalysis application, ensuring consistency and best practices.
 
-## 2. Script Structure
+## Key Principles
+- ✓ Place all utility scripts in the `tools/scripts/` directory
+- ✓ Name scripts according to their functionality (db_*, import_*, export_*, etc.)
+- ✓ Implement proper logging to both console and file
+- ✓ Handle errors gracefully with specific error messages
+- ✓ Document script purpose and usage in docstrings
+- ✓ Implement robust resource management with try/finally blocks
+
+## Script Types
+- Database management: `db_*.py`
+- Data import/export: `import_*.py` or `export_*.py`
+- Cleanup utilities: `clean_*.py`
+- Backup utilities: `backup_*.py`
+- Database validation: `validate_database.py`
+
+## Resource Management
+```python
+# Initialize resources to None
+db_client = None
+file_handle = None
+
+try:
+    # Initialize resources
+    db_client = AsyncIOMotorClient(mongo_uri)
+    file_handle = open(output_file, 'w')
+    
+    # Use resources
+    data = await db_client.get_database().collection.find({})
+    for item in data:
+        file_handle.write(json.dumps(item) + '\n')
+        
+except Exception as e:
+    logger.error(f"Script failed: {e}")
+    sys.exit(1)
+finally:
+    # Clean up resources
+    if file_handle:
+        try:
+            file_handle.close()
+        except Exception as e:
+            logger.warning(f"Error closing file: {e}")
+            
+    if db_client:
+        try:
+            await db_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing DB connection: {e}")
+```
+
+## Script Structure Example
 ```python
 """
 Script to [description].
+
+Usage:
+    python -m tools.scripts.script_name [options]
 """
 import asyncio
 import logging
+import argparse
+import sys
 from dotenv import load_dotenv
-from motor.motor_asyncio import AsyncIOMotorClient
 
 # Configure logging
 logging.basicConfig(
@@ -36,58 +83,64 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("script_name.log")
+        logging.FileHandler("logs/script_name.log")
     ]
 )
-
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("script-name")
 
 async def main():
-    """Main function."""
-    # Implementation
+    """Main entry point."""
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Script description")
+    parser.add_argument("--option", help="Option description")
+    args = parser.parse_args()
     
+    # Initialize resources to None
+    resource = None
+    
+    try:
+        # Initialize and use resources
+        resource = await setup_resource()
+        result = await process_with_resource(resource)
+        logger.info(f"Script completed successfully: {result}")
+        return 0
+    except Exception as e:
+        logger.error(f"Script failed: {e}", exc_info=True)
+        return 1
+    finally:
+        # Clean up resources
+        if resource:
+            try:
+                await resource.close()
+            except Exception as e:
+                logger.warning(f"Error closing resource: {e}")
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    load_dotenv()
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)
 ```
 
-## 3. Script Documentation
-- ✓ Each script should have a docstring describing its purpose
-- ✓ Each function should have a docstring
-- ✓ Complex logic should be commented
-- ✓ Command-line arguments should be documented
-- ✓ Output format should be documented
-- ✓ Dependencies should be documented
+## Error Handling Strategies
+- Use specific exception types for different error conditions
+- Log the full stack trace for unexpected errors
+- Return appropriate exit codes (0 for success, non-zero for errors)
+- Implement graceful degradation when possible
+- Always clean up resources in finally blocks
+- Provide user-friendly error messages
 
-## 4. Script Functionality
-- ✓ Scripts should have a single responsibility
-- ✓ Scripts should be idempotent when possible
-- ✓ Scripts should handle errors gracefully
-- ✓ Scripts should log all operations
-- ✓ Scripts should provide meaningful output
-- ✓ Scripts should be configurable via command-line arguments or environment variables
+## Database Validation Script
+For database validation, use the `validate_database.py` script which:
+- Validates database collections without requiring test files
+- Checks for missing required fields
+- Verifies data integrity and relationships
+- Reports issues in a readable format
 
-## 5. Database Scripts
-- ✓ Database connection details should be loaded from environment variables
-- ✓ Scripts should verify the connection before proceeding
-- ✓ Scripts should handle connection errors gracefully
-- ✓ Scripts should log all database operations
-- ✓ Scripts should provide meaningful output
-- ✓ Scripts should confirm before destructive operations
+Usage:
+```bash
+python -m tools.scripts.validate_database [--collection COLLECTION]
+```
 
-## 6. Import/Export Scripts
-- ✓ Scripts should validate input data
-- ✓ Scripts should handle missing or invalid data gracefully
-- ✓ Scripts should log all operations
-- ✓ Scripts should provide meaningful output
-- ✓ Scripts should support various file formats (CSV, JSON, etc.)
-- ✓ Scripts should handle duplicate data
+For detailed database validation guidelines, refer to the `database-validation.mdc` rule.
 
-## 7. Logging
-- ✓ All scripts should log to both console and file
-- ✓ Log files should be stored in the `logs/` directory
-- ✓ Log files should be named after the script
-- ✓ Log level should be configurable
-- ✓ Logs should include timestamps
-- ✓ Logs should include the logger name
-
-These guidelines ensure consistent and effective utility scripts across the application.
+These guidelines ensure consistent, effective, and robust utility scripts across the application.

@@ -14,22 +14,26 @@ from selenium.common.exceptions import (
     StaleElementReferenceException
 )
 from motor.motor_asyncio import AsyncIOMotorCollection
+import re
 
 logger = logging.getLogger(__name__)
 
-def extract_financial_data(card):
+def extract_financial_data(card_soup: BeautifulSoup) -> Dict[str, Any]:
     """
-    Extracts basic financial data from a result card element.
+    Extract financial data from a result card.
     
     Args:
-        card (bs4.element.Tag): BeautifulSoup Tag object representing a company result card.
+        card_soup (BeautifulSoup): BeautifulSoup object of the result card.
         
     Returns:
-        dict: Dictionary containing extracted financial data.
+        Dict[str, Any]: Dictionary of financial data.
     """
     try:
-        # Create a dictionary with all the financial data
+        logger.info("Extracting financial data from result card")
+        
+        # Initialize with None to indicate data not found
         financial_data = {
+            "quarter": None,
             "cmp": None,
             "revenue": None,
             "gross_profit": None,
@@ -37,76 +41,217 @@ def extract_financial_data(card):
             "net_profit_growth": None,
             "gross_profit_growth": None,
             "revenue_growth": None,
-            "quarter": None,
             "result_date": None,
-            "report_type": None,
+            "report_type": None
         }
         
-        # Safely extract each piece of data
+        # Try to extract quarter information - try multiple selectors
         try:
-            if card.select_one('p.rapidResCardWeb_priceTxt___5MvY'):
-                financial_data["cmp"] = card.select_one('p.rapidResCardWeb_priceTxt___5MvY').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting CMP: {str(e)}")
+            # Primary selector for quarter
+            quarter_element = card_soup.select_one('tr th:nth-child(1)')
+            if quarter_element and quarter_element.text.strip():
+                financial_data["quarter"] = quarter_element.text.strip()
+                logger.info(f"Found quarter: {financial_data['quarter']}")
             
+            # Alternative selectors if primary fails
+            if not financial_data["quarter"]:
+                alt_selectors = [
+                    '.quarterPeriod', 
+                    'th:contains("Quarter")', 
+                    'th:contains("Q")', 
+                    '.qprd',
+                    '[class*="quarter"]',
+                    '[class*="period"]'
+                ]
+                
+                for selector in alt_selectors:
+                    try:
+                        element = None
+                        if ':contains' in selector:
+                            # Handle custom contains selector
+                            tag_name = selector.split(':contains')[0]
+                            search_text = selector.split('(')[1].split(')')[0].replace('"', '')
+                            elements = card_soup.find_all(tag_name)
+                            for el in elements:
+                                if search_text in el.text:
+                                    element = el
+                                    break
+                        else:
+                            element = card_soup.select_one(selector)
+                            
+                        if element and element.text.strip():
+                            financial_data["quarter"] = element.text.strip()
+                            logger.info(f"Found quarter with alternate selector '{selector}': {financial_data['quarter']}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error with alternate selector '{selector}': {str(e)}")
+            
+            # If still not found, try to extract from any text that looks like a quarter
+            if not financial_data["quarter"]:
+                all_text = card_soup.get_text()
+                quarter_patterns = [
+                    r'Q[1-4]\s+\d{4}',                  # Q1 2023
+                    r'Q[1-4]\s+FY\d{2}',                # Q1 FY23
+                    r'Q[1-4]\s+FY\d{2}-\d{2}',          # Q1 FY23-24
+                    r'Quarter\s+[1-4]\s+\d{4}',         # Quarter 1 2023
+                    r'Quarter\s+[1-4]\s+FY\d{2}',       # Quarter 1 FY23
+                    r'Quarter\s+[1-4]\s+FY\d{2}-\d{2}'  # Quarter 1 FY23-24
+                ]
+                
+                for pattern in quarter_patterns:
+                    match = re.search(pattern, all_text)
+                    if match:
+                        financial_data["quarter"] = match.group(0)
+                        logger.info(f"Found quarter with regex pattern: {financial_data['quarter']}")
+                        break
+        except Exception as e:
+            logger.warning(f"Error extracting quarter: {str(e)}")
+            
+        # If quarter still not found, use current quarter as fallback
+        if not financial_data["quarter"]:
+            current_month = datetime.datetime.now().month
+            current_year = datetime.datetime.now().year
+            quarter = (current_month - 1) // 3 + 1
+            financial_data["quarter"] = f"Q{quarter} FY{str(current_year)[2:]}-{str(current_year+1)[2:]}"
+            logger.info(f"Using default quarter: {financial_data['quarter']}")
+        
+        # Try to extract Current Market Price (CMP)
         try:
-            if card.select_one('tr:nth-child(1) td:nth-child(2)'):
-                financial_data["revenue"] = card.select_one('tr:nth-child(1) td:nth-child(2)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting revenue: {str(e)}")
+            cmp_element = card_soup.select_one('tr td.clrAcl span.rGrn, tr td.clrAcl span.rRed')
+            if cmp_element:
+                financial_data["cmp"] = cmp_element.text.strip()
+                logger.info(f"Found CMP: {financial_data['cmp']}")
             
-        try:
-            if card.select_one('tr:nth-child(2) td:nth-child(2)'):
-                financial_data["gross_profit"] = card.select_one('tr:nth-child(2) td:nth-child(2)').text.strip()
+            # Try alternative selector
+            if not financial_data["cmp"]:
+                alt_selectors = [
+                    'td[class*="cmp"] span', 
+                    '.currentPrice',
+                    'span[class*="price"]',
+                    '.price',
+                    'td:contains("CMP")'
+                ]
+                
+                for selector in alt_selectors:
+                    try:
+                        element = None
+                        if ':contains' in selector:
+                            # Handle custom contains selector
+                            tag_name = selector.split(':contains')[0]
+                            search_text = selector.split('(')[1].split(')')[0].replace('"', '')
+                            elements = card_soup.find_all(tag_name)
+                            for el in elements:
+                                if search_text in el.text:
+                                    # Get the next sibling or child that might contain the price
+                                    next_el = el.find_next()
+                                    if next_el:
+                                        element = next_el
+                                    break
+                        else:
+                            element = card_soup.select_one(selector)
+                            
+                        if element and element.text.strip():
+                            financial_data["cmp"] = element.text.strip()
+                            logger.info(f"Found CMP with alternate selector '{selector}': {financial_data['cmp']}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error with alternate CMP selector '{selector}': {str(e)}")
         except Exception as e:
-            logger.debug(f"Error extracting gross profit: {str(e)}")
-            
-        try:
-            if card.select_one('tr:nth-child(3) td:nth-child(2)'):
-                financial_data["net_profit"] = card.select_one('tr:nth-child(3) td:nth-child(2)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting net profit: {str(e)}")
-            
-        try:
-            if card.select_one('tr:nth-child(3) td:nth-child(4)'):
-                financial_data["net_profit_growth"] = card.select_one('tr:nth-child(3) td:nth-child(4)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting net profit growth: {str(e)}")
-            
-        try:
-            if card.select_one('tr:nth-child(2) td:nth-child(4)'):
-                financial_data["gross_profit_growth"] = card.select_one('tr:nth-child(2) td:nth-child(4)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting gross profit growth: {str(e)}")
-            
-        try:
-            if card.select_one('tr:nth-child(1) td:nth-child(4)'):
-                financial_data["revenue_growth"] = card.select_one('tr:nth-child(1) td:nth-child(4)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting revenue growth: {str(e)}")
-            
-        try:
-            if card.select_one('tr th:nth-child(1)'):
-                financial_data["quarter"] = card.select_one('tr th:nth-child(1)').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting quarter: {str(e)}")
-            
-        try:
-            if card.select_one('p.rapidResCardWeb_gryTxtOne__mEhU_'):
-                financial_data["result_date"] = card.select_one('p.rapidResCardWeb_gryTxtOne__mEhU_').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting result date: {str(e)}")
-            
-        try:
-            if card.select_one('p.rapidResCardWeb_bottomText__p8YzI'):
-                financial_data["report_type"] = card.select_one('p.rapidResCardWeb_bottomText__p8YzI').text.strip()
-        except Exception as e:
-            logger.debug(f"Error extracting report type: {str(e)}")
-            
+            logger.warning(f"Error extracting CMP: {str(e)}")
+        
+        # Helper function to extract metric with multiple selectors
+        def extract_metric(metric_name, primary_selector, alternate_selectors=None):
+            try:
+                element = card_soup.select_one(primary_selector)
+                if element and element.text.strip():
+                    value = element.text.strip()
+                    financial_data[metric_name] = value
+                    logger.info(f"Found {metric_name}: {value}")
+                    return True
+                
+                if alternate_selectors:
+                    for selector in alternate_selectors:
+                        try:
+                            element = card_soup.select_one(selector)
+                            if element and element.text.strip():
+                                value = element.text.strip()
+                                financial_data[metric_name] = value
+                                logger.info(f"Found {metric_name} with alternate selector '{selector}': {value}")
+                                return True
+                        except Exception as e:
+                            logger.debug(f"Error with alternate {metric_name} selector '{selector}': {str(e)}")
+                            
+                return False
+            except Exception as e:
+                logger.warning(f"Error extracting {metric_name}: {str(e)}")
+                return False
+        
+        # Extract revenue
+        extract_metric("revenue", 'tr td:nth-child(2)', [
+            '.revenue', 
+            'td:contains("Revenue")', 
+            'td:contains("Sales")',
+            'td[class*="revenue"]',
+            'td[class*="sales"]'
+        ])
+        
+        # Extract net profit
+        extract_metric("net_profit", 'tr td:nth-child(3)', [
+            '.netProfit', 
+            'td:contains("Net Profit")', 
+            'td:contains("PAT")',
+            'td[class*="profit"]',
+            'td[class*="pat"]'
+        ])
+        
+        # Extract revenue growth
+        extract_metric("revenue_growth", 'tr td:nth-child(5)', [
+            '.revenueGrowth', 
+            'td:contains("Revenue Growth")', 
+            'td:contains("Sales Growth")',
+            'td[class*="revGrowth"]',
+            'td[class*="salesGrowth"]'
+        ])
+        
+        # Extract net profit growth
+        extract_metric("net_profit_growth", 'tr td:nth-child(6)', [
+            '.netProfitGrowth', 
+            'td:contains("Net Profit Growth")', 
+            'td:contains("PAT Growth")',
+            'td[class*="profitGrowth"]',
+            'td[class*="patGrowth"]'
+        ])
+        
+        # Extract result date if available
+        extract_metric("result_date", 'tr td.boardMeetDate', [
+            '.resultDate', 
+            'td:contains("Result Date")',
+            'td[class*="date"]'
+        ])
+        
+        # Set report type to quarterly by default
+        financial_data["report_type"] = "Quarterly"
+        
+        logger.info("Financial data extraction completed successfully")
+        
+        # Return the extracted data
         return financial_data
+        
     except Exception as e:
-        logger.error(f"Error extracting financial data: {str(e)}")
-        return {}
+        logger.error(f"Error in extract_financial_data: {str(e)}")
+        # Return empty dictionary with structure intact
+        return {
+            "quarter": None,
+            "cmp": None,
+            "revenue": None,
+            "gross_profit": None,
+            "net_profit": None,
+            "net_profit_growth": None,
+            "gross_profit_growth": None,
+            "revenue_growth": None,
+            "result_date": None,
+            "report_type": None
+        }
 
 def scrape_financial_metrics(driver, stock_link):
     """
@@ -239,12 +384,28 @@ def scrape_financial_metrics(driver, stock_link):
                     logger.info(f"KnowBeforeYouInvest section HTML sample: {str(know_before_section)[:500]}...")
                 else:
                     logger.warning("Could not find #knowBeforeInvest section")
+                    
+                    # Check if relevant keywords exist on the page (similar to test script approach)
+                    html_content = str(detailed_soup)
+                    keywords = ['strengths', 'weaknesses', 'technicals', 'piotroski', 'cagr']
+                    keywords_found = False
+                    
+                    for keyword in keywords:
+                        if keyword in html_content.lower():
+                            logger.info(f"Found keyword '{keyword}' on the page")
+                            keywords_found = True
+                    
+                    if not keywords_found:
+                        logger.warning("No relevant keywords found on the page")
             except Exception as e:
                 logger.warning(f"Error examining KnowBeforeYouInvest section: {str(e)}")
             
             # Strengths - try multiple selectors
             strengths_selectors = [
                 '#swot_ls > a > strong',
+                '.swotdiv .strengths strong',
+                '.swotleft strong',
+                '.swot_str strong',
                 '.swotls strong',
                 '#swot_ls strong',
                 '.swot_ls strong'
@@ -258,11 +419,22 @@ def scrape_financial_metrics(driver, stock_link):
                     break
             
             if not metrics["strengths"]:
-                logger.warning(f"No strengths element found with any of these selectors: {strengths_selectors}")
+                # Try with select instead of select_one
+                for selector in strengths_selectors:
+                    strengths_elements = detailed_soup.select(selector)
+                    if strengths_elements:
+                        metrics["strengths"] = strengths_elements[0].text.strip()
+                        logger.info(f"Found strengths with selector array '{selector}': {metrics['strengths']}")
+                        break
+                if not metrics["strengths"]:
+                    logger.warning(f"No strengths element found with any of these selectors: {strengths_selectors}")
             
             # Weaknesses - try multiple selectors
             weaknesses_selectors = [
                 '#swot_lw > a > strong',
+                '.swotdiv .weaknesses strong',
+                '.swotright strong',
+                '.swot_weak strong',
                 '.swotlw strong',
                 '#swot_lw strong',
                 '.swot_lw strong'
@@ -276,28 +448,54 @@ def scrape_financial_metrics(driver, stock_link):
                     break
             
             if not metrics["weaknesses"]:
-                logger.warning(f"No weaknesses element found with any of these selectors: {weaknesses_selectors}")
+                # Try with select instead of select_one
+                for selector in weaknesses_selectors:
+                    weaknesses_elements = detailed_soup.select(selector)
+                    if weaknesses_elements:
+                        metrics["weaknesses"] = weaknesses_elements[0].text.strip()
+                        logger.info(f"Found weaknesses with selector array '{selector}': {metrics['weaknesses']}")
+                        break
+                if not metrics["weaknesses"]:
+                    logger.warning(f"No weaknesses element found with any of these selectors: {weaknesses_selectors}")
             
             # Technicals trend - try multiple selectors
             technicals_selectors = [
                 '#techAnalysis a[style*="flex"]',
-                '#techAnalysis a',
-                '.techAnalysis a'
+                '.techDiv p strong',
+                '.techAnls strong',
+                '.technicals strong',
+                '#dMoving_Averages strong',  # Added from test script
+                'table td:contains("Moving Averages") + td strong'  # Added from test script
             ]
             
             for selector in technicals_selectors:
-                technicals_element = detailed_soup.select_one(selector)
-                if technicals_element:
-                    metrics["technicals_trend"] = technicals_element.text.strip()
-                    logger.info(f"Found technicals trend with selector '{selector}': {metrics['technicals_trend']}")
-                    break
+                try:
+                    technicals_element = detailed_soup.select_one(selector)
+                    if technicals_element:
+                        metrics["technicals_trend"] = technicals_element.text.strip()
+                        logger.info(f"Found technicals_trend with selector '{selector}': {metrics['technicals_trend']}")
+                        break
+                except Exception as e:
+                    logger.debug(f"Error with selector '{selector}': {str(e)}")
             
             if not metrics["technicals_trend"]:
-                logger.warning(f"No technicals trend element found with any of these selectors: {technicals_selectors}")
+                # Try with select instead of select_one
+                for selector in technicals_selectors:
+                    try:
+                        technicals_elements = detailed_soup.select(selector)
+                        if technicals_elements:
+                            metrics["technicals_trend"] = technicals_elements[0].text.strip()
+                            logger.info(f"Found technicals_trend with selector array '{selector}': {metrics['technicals_trend']}")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error with selector array '{selector}': {str(e)}")
             
             # Piotroski score - try multiple selectors
             piotroski_selectors = [
                 'div:nth-child(2) div.fpioi div.nof',
+                '.piotroski_score',
+                '.pio_score span',
+                '#piotroskiScore',
                 '.fpioi .nof',
                 '#knowBeforeInvest .fpioi .nof'
             ]
@@ -310,41 +508,59 @@ def scrape_financial_metrics(driver, stock_link):
                     break
             
             if not metrics["piotroski_score"]:
-                logger.warning(f"No Piotroski score element found with any of these selectors: {piotroski_selectors}")
-            
-            # CAGR values - try multiple selectors
-            revenue_cagr_selectors = [
-                'tr:-soup-contains("Revenue") td:nth-child(2)',
-                'tr:contains("Revenue") td:nth-child(2)',
-                '#knowBeforeInvest tr:contains("Revenue") td:nth-child(2)'
-            ]
-            
-            for selector in revenue_cagr_selectors:
-                try:
-                    revenue_cagr_element = detailed_soup.select_one(selector)
-                    if revenue_cagr_element:
-                        metrics["revenue_growth_3yr_cagr"] = revenue_cagr_element.text.strip()
-                        logger.info(f"Found revenue CAGR with selector '{selector}': {metrics['revenue_growth_3yr_cagr']}")
+                # Try with select instead of select_one
+                for selector in piotroski_selectors:
+                    piotroski_elements = detailed_soup.select(selector)
+                    if piotroski_elements:
+                        metrics["piotroski_score"] = piotroski_elements[0].text.strip()
+                        logger.info(f"Found Piotroski score with selector array '{selector}': {metrics['piotroski_score']}")
                         break
-                except Exception as e:
-                    logger.warning(f"Error with selector '{selector}': {str(e)}")
+                if not metrics["piotroski_score"]:
+                    logger.warning(f"No Piotroski score element found with any of these selectors: {piotroski_selectors}")
             
-            if not metrics["revenue_growth_3yr_cagr"]:
-                logger.warning(f"No revenue CAGR element found with any of these selectors: {revenue_cagr_selectors}")
-            
-            # Try to find all tables and look for CAGR data
+            # Try to find CAGR data in tables (similar to test script approach)
             try:
-                tables = detailed_soup.select('table')
+                # Find all tables on the page
+                tables = detailed_soup.find_all('table')
                 logger.info(f"Found {len(tables)} tables on the page")
                 
-                for i, table in enumerate(tables):
-                    logger.info(f"Table {i+1} content sample: {str(table)[:200]}...")
-                    
-                    # Look for CAGR related text in the table
-                    if 'CAGR' in str(table) or 'Revenue' in str(table) or 'Profit' in str(table):
+                # Check each table for CAGR data
+                for i, table in enumerate(tables[:30]):  # Limit to first 30 tables for performance
+                    table_html = str(table)
+                    if 'cagr' in table_html.lower() or 'growth' in table_html.lower():
                         logger.info(f"Table {i+1} might contain CAGR data")
+                        
+                        # Save table HTML for debugging
+                        try:
+                            with open(f"logs/table_{i+1}.html", "w", encoding="utf-8") as f:
+                                f.write(table_html)
+                            logger.info(f"Saved table HTML to logs/table_{i+1}.html")
+                        except Exception as e:
+                            logger.debug(f"Error saving table HTML: {str(e)}")
+                        
+                        # Look for specific CAGR values
+                        if 'profit grwth 3yr cagr' in table_html.lower() or 'profit growth 3yr cagr' in table_html.lower():
+                            # Extract the value using various methods
+                            try:
+                                # Method 1: Look for specific cell pattern
+                                cagr_cell = table.select_one('td:contains("Profit Grwth 3Yr CAGR") + td span')
+                                if cagr_cell:
+                                    metrics["net_profit_growth_3yr_cagr"] = float(cagr_cell.text.strip())
+                                    logger.info(f"Found net_profit_growth_3yr_cagr: {metrics['net_profit_growth_3yr_cagr']}")
+                            except Exception as e:
+                                logger.debug(f"Error extracting net_profit_growth_3yr_cagr: {str(e)}")
+                        
+                        if 'sales grwth 3yr cagr' in table_html.lower() or 'sales growth 3yr cagr' in table_html.lower():
+                            try:
+                                # Method 1: Look for specific cell pattern
+                                cagr_cell = table.select_one('td:contains("Sales Grwth 3Yr CAGR") + td span')
+                                if cagr_cell:
+                                    metrics["revenue_growth_3yr_cagr"] = float(cagr_cell.text.strip())
+                                    logger.info(f"Found revenue_growth_3yr_cagr: {metrics['revenue_growth_3yr_cagr']}")
+                            except Exception as e:
+                                logger.debug(f"Error extracting revenue_growth_3yr_cagr: {str(e)}")
             except Exception as e:
-                logger.warning(f"Error examining tables: {str(e)}")
+                logger.warning(f"Error searching for CAGR data in tables: {str(e)}")
             
             logger.info("Completed extraction of KnowBeforeYouInvest section data")
         except Exception as e:

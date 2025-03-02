@@ -15,4 +15,8 @@ uv.lock
 .env
 **/project_state.json*
 
+logs/**
+tests/**/*
+tools/**
+
 

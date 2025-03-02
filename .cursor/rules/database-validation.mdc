@@ -1,0 +1,102 @@
+---
+description: Database Validation Guidelines
+globs: src/**/*.py
+alwaysApply: false
+---
+---
+description: Database Validation Guidelines
+globs: src/**/*.py
+alwaysApply: false
+---
+
+# Database Validation Guidelines
+
+## Purpose
+This rule provides guidance on how to validate database operations and ensure data integrity in the StockAnalysis application without creating test files.
+
+## Key Principles
+- ✓ Use MongoDB shell (mongosh) for direct database validation
+- ✓ Validate all required fields exist with correct data types
+- ✓ Verify relationships between collections are maintained
+- ✓ Check for duplicate entries and data consistency
+- ✓ Use the validation utility script for comprehensive checks
+- ✓ Properly manage database connections in both production and test code
+
+## Connection Management Best Practices
+```python
+# Initialize the client to None
+db_client = None
+
+try:
+    # Create the connection
+    db_client = AsyncIOMotorClient(MONGO_URL)
+    
+    # Use the connection
+    db = db_client.get_database("stock_analysis")
+    collection = db.get_collection("companies")
+    results = await collection.find({}).to_list(length=10)
+    
+except Exception as e:
+    logger.error(f"Database error: {e}")
+    # Handle the error appropriately
+finally:
+    # Close the connection safely
+    if db_client:
+        try:
+            await db_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing database connection: {e}")
+```
+
+## References
+- Run `python -m tools.scripts.validate_database` for automated validation
+- See MongoDB documentation: https://docs.mongodb.com/manual/
+
+## MongoDB Collections
+- `detailed_financials`: Stock financial data
+- `ai_analysis`: AI-generated analysis for stocks
+- `holdings`: User portfolio holdings
+- `ipo_data`: Information about IPOs
+- `settings`: Application settings
+
+## Examples
+
+### Basic Validation Commands
+```javascript
+// Connect and view collections
+use stock_data
+show collections
+
+// Query basic stock data
+db.detailed_financials.findOne({symbol: "AAPL"})
+
+// Check for missing required fields
+db.holdings.find({
+  $or: [
+    {symbol: {$exists: false}},
+    {quantity: {$exists: false}}
+  ]
+})
+
+// Verify relationships between collections
+const holding = db.holdings.findOne({symbol: "AAPL"})
+const financial = db.detailed_financials.findOne({symbol: "AAPL"})
+if (!financial) print("Missing financial data")
+```
+
+### API-Based Validation
+```bash
+# Test API endpoint for stock data
+curl -X GET "http://localhost:8000/api/v1/stock/AAPL"
+```
+
+## Async Operations Best Practices
+- Always use `await` when calling async methods
+- Handle connection pooling appropriately
+- Close connections in finally blocks
+- Don't mix sync and async operations
+- Use connection timeouts to prevent hanging
+- Consider using dependency injection for database connections
+
+These guidelines help ensure data integrity and proper connection management.
+

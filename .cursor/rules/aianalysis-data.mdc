@@ -4,19 +4,26 @@ globs: src/**/ai*.py, src/**/analysis*.py, src/services/insights*.py, src/api/en
 alwaysApply: false
 ---
 ---
-description: AI Analysis Implementation
-globs: src/models/analysis.py, src/services/analysis_service.py, src/api/endpoints/analysis.py
+description: AI Analysis Guidelines
+globs: src/**/ai*.py, src/**/analysis*.py, src/services/insights*.py, src/api/endpoints/analysis*.py
 alwaysApply: false
 ---
 
-# AI Analysis Implementation
+# AI Analysis Guidelines
 
-## 1. Data Model
-The analysis data model represents AI-generated insights for a stock.
+## Purpose
+This rule provides guidance on the implementation, processing, and management of AI-generated analysis in the StockAnalysis application.
 
+## Key Principles
+- ✓ Define analysis models with all required fields for AI insights
+- ✓ Implement comprehensive analysis services for generating and retrieving insights
+- ✓ Use consistent API endpoints for accessing analysis data
+- ✓ Follow the file organization structure for all analysis-related files
+- ✓ Properly integrate with external AI services
+
+## Data Structure
 ```python
 class Analysis(BaseModel):
-    id: Optional[str] = None
     symbol: str
     timestamp: datetime
     recommendation: str  # "Buy", "Sell", "Hold"
@@ -24,88 +31,32 @@ class Analysis(BaseModel):
     summary: str
     strengths: List[str]
     weaknesses: List[str]
-    opportunities: List[str]
-    threats: List[str]
     price_target: Optional[float] = None
-    time_horizon: Optional[str] = None  # "Short-term", "Medium-term", "Long-term"
-    
-    class Config:
-        schema_extra = {
-            "example": {
-                "id": "60f7b0b9e4b0b5a9b9b0b9b9",
-                "symbol": "AAPL",
-                "timestamp": "2023-02-28T16:00:00Z",
-                "recommendation": "Buy",
-                "confidence": 0.85,
-                "summary": "Apple shows strong fundamentals with...",
-                "strengths": ["Strong cash position", "Brand loyalty"],
-                "weaknesses": ["Supply chain challenges"],
-                "opportunities": ["Services growth", "New markets"],
-                "threats": ["Increased competition", "Regulatory pressure"],
-                "price_target": 185.50,
-                "time_horizon": "Medium-term"
-            }
-        }
 ```
 
-## 2. Analysis Service
-The analysis service handles operations related to AI analysis.
-
-```python
-class AnalysisService:
-    def __init__(self, db: Database):
-        self.db = db
-        self.collection = db.ai_analysis
-    
-    async def get_analysis_history(self, symbol: str) -> List[Analysis]:
-        # Implementation
-        
-    async def get_analysis_by_id(self, analysis_id: str) -> Optional[Analysis]:
-        # Implementation
-        
-    async def generate_analysis(self, symbol: str) -> Analysis:
-        # Implementation
-        
-    async def save_analysis(self, analysis: Analysis) -> str:
-        # Implementation
-```
-
-## 3. API Endpoints
-Analysis data is exposed through the following endpoints:
-
+## API Endpoints
 - `GET /api/v1/analysis/history/{symbol}` - Get analysis history
 - `GET /api/v1/analysis/{id}` - Get analysis by ID
 - `POST /api/v1/analysis/generate/{symbol}` - Generate new analysis
 
-## 4. File Organization
-- ✓ Analysis models should be defined in `src/models/analysis.py`
-- ✓ Analysis services should be implemented in `src/services/analysis_service.py`
-- ✓ Analysis API endpoints should be defined in `src/api/endpoints/analysis.py`
-- ✓ Analysis data tests should be placed in `tests/test_analysis.py`
-- ✓ Analysis data utilities should be placed in `src/utils/analysis_utils.py`
-- ✓ Analysis data scripts should be placed in `tools/scripts/`
+## File Organization
+- ✓ Models: `src/models/analysis.py`
+- ✓ Services: `src/services/analysis_service.py`
+- ✓ API endpoints: `src/api/endpoints/analysis.py`
+- ✓ Tests: `tests/test_analysis.py`
+- ✓ Utilities: `src/utils/analysis_utils.py`
 
-## 5. AI Model Integration
+## AI Integration
 - ✓ Use OpenAI API for analysis generation
 - ✓ Handle API rate limits and quotas
 - ✓ Cache results to minimize API calls
 - ✓ Implement fallback mechanisms
-- ✓ Log all API interactions
 - ✓ Secure API keys properly
 
-## 6. Data Processing Rules
-- ✓ Validate all input data
-- ✓ Format analysis text consistently
-- ✓ Sort analysis history by timestamp (newest first)
-- ✓ Handle missing data gracefully
-- ✓ Limit analysis history to recent entries
-- ✓ Implement proper error handling
-
-## 7. Error Handling
+## Error Handling
 - ✓ Return 404 for unknown analysis IDs
 - ✓ Handle API failures gracefully
-- ✓ Log all errors
+- ✓ Log all errors with detailed context
 - ✓ Provide meaningful error messages
-- ✓ Implement retry logic for transient failures
 
-These guidelines ensure consistent handling of AI analysis across the application.
+These guidelines ensure consistent AI analysis generation and handling across the application.

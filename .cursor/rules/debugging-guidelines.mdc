@@ -1,0 +1,163 @@
+---
+description: Debugging and Error Handling Guidelines
+globs: src/**/*.py, tests/**/*.py
+alwaysApply: false
+---
+ ---
+description: Debugging and Error Handling Guidelines
+globs: src/**/*.py, tests/**/*.py
+alwaysApply: false
+---
+
+# Debugging and Error Handling Guidelines
+
+## Purpose
+This rule provides guidance on implementing effective error handling and debugging practices for the StockAnalysis application based on lessons learned from troubleshooting.
+
+## Key Principles
+- ✓ Initialize all resources to a safe default value (typically None)
+- ✓ Use try/except/finally blocks for robust error handling
+- ✓ Check for None before calling methods on potentially None objects
+- ✓ Implement proper resource cleanup in finally blocks
+- ✓ Log detailed information at each step for traceability
+- ✓ Take screenshots or capture state for UI-based operations
+- ✓ Provide fallback strategies when primary approaches fail
+
+## Resource Initialization and Cleanup
+
+```python
+# Always initialize resources to None
+driver = None
+db_client = None
+
+try:
+    # Initialize and use resources
+    driver = setup_webdriver()
+    db_client = AsyncIOMotorClient(MONGO_URL)
+    
+    # Use resources...
+    
+except Exception as e:
+    logger.error(f"Operation failed: {e}")
+    # Appropriate error handling
+finally:
+    # Clean up resources safely
+    if driver:
+        try:
+            driver.quit()
+        except Exception as e:
+            logger.warning(f"Error closing WebDriver: {e}")
+            
+    if db_client:
+        try:
+            # For async resources
+            await db_client.close()
+        except Exception as e:
+            logger.warning(f"Error closing DB connection: {e}")
+            
+    logger.info("Resources cleaned up")
+```
+
+## Asynchronous Error Handling
+
+```python
+async def async_operation():
+    """Example of proper async error handling."""
+    resource = None
+    try:
+        # Set up async resource
+        resource = await setup_async_resource()
+        
+        # Use the resource
+        result = await resource.operation()
+        return result
+        
+    except aiohttp.ClientError as e:
+        logger.error(f"Network error: {e}")
+        return None
+    except asyncio.TimeoutError:
+        logger.error("Operation timed out")
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return None
+    finally:
+        # Clean up async resource
+        if resource:
+            try:
+                await resource.close()
+            except Exception as e:
+                logger.warning(f"Error closing resource: {e}")
+```
+
+## Logging Guidelines
+
+- Include timestamps, module name, and log level in all logs
+- Log at appropriate levels:
+  - DEBUG: Detailed debugging information
+  - INFO: Confirmation that things are working as expected
+  - WARNING: Something unexpected but not critical
+  - ERROR: Serious issues preventing functionality
+  - CRITICAL: System-wide failures requiring immediate attention
+- Log the full stack trace for unexpected errors
+- Include context in log messages (IDs, parameters, etc.)
+- Use structured logging for machine-parseable logs
+
+## Fallback Strategies
+
+```python
+def extract_data_with_fallback(source, fallback_sources=None):
+    """Extract data with multiple fallback strategies."""
+    try:
+        # Try primary method
+        return extract_from_source(source)
+    except PrimaryExtractionError:
+        logger.warning("Primary extraction failed, trying alternatives")
+        
+        # Try fallback methods
+        if fallback_sources:
+            for fallback in fallback_sources:
+                try:
+                    return extract_from_source(fallback)
+                except Exception as e:
+                    logger.info(f"Fallback {fallback} failed: {e}")
+                    continue
+        
+        # If all else fails, use a sensible default
+        logger.warning("All extraction methods failed, using default")
+        return default_value()
+```
+
+## Debugging Tools and Techniques
+
+- Use snapshot testing to detect regressions
+- Implement toggle-able debug mode that increases log verbosity
+- Save intermediate state during complex operations
+- Use proper exception hierarchies to enable specific error handling
+- Implement health checks and monitoring for production services
+- Use visualization tools for complex data structures
+- Create reproducible test cases for complex bugs
+
+## Testing for Error Conditions
+
+```python
+def test_resource_cleanup_on_error():
+    """Test that resources are properly cleaned up when errors occur."""
+    # Mock resources
+    mock_driver = MagicMock()
+    mock_db = MagicMock()
+    
+    # Mock setup functions to return our mocks
+    with patch('setup_webdriver', return_value=mock_driver):
+        with patch('AsyncIOMotorClient', return_value=mock_db):
+            # Cause an error during execution
+            with patch('some_operation', side_effect=Exception("Test error")):
+                # Call the function under test
+                result = function_under_test()
+                
+                # Verify cleanup occurred despite the error
+                mock_driver.quit.assert_called_once()
+                mock_db.close.assert_called_once()
+```
+
+These guidelines help ensure robust error handling and effective debugging throughout the application.
