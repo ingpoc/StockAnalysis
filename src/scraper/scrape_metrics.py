@@ -117,45 +117,70 @@ def extract_financial_data(card_soup: BeautifulSoup) -> Dict[str, Any]:
         
         # Try to extract Current Market Price (CMP)
         try:
-            cmp_element = card_soup.select_one('tr td.clrAcl span.rGrn, tr td.clrAcl span.rRed')
-            if cmp_element:
-                financial_data["cmp"] = cmp_element.text.strip()
-                logger.info(f"Found CMP: {financial_data['cmp']}")
+            # Try multiple selectors for CMP
+            cmp_selectors = [
+                'tr td.clrAcl span.rGrn, tr td.clrAcl span.rRed',
+                'td[class*="cmp"] span',
+                '.currentPrice',
+                'span[class*="price"]',
+                '.price',
+                'td:contains("CMP")',
+                '.stock-price',
+                '.stprice',
+                '.priceinfo span',
+                '.price_wrapper span',
+                '.stock_price',
+                '.nse_bse_sub_prices span:first-child',
+                '.stock_details .price',
+                '.stock-current-price'
+            ]
             
-            # Try alternative selector
+            for selector in cmp_selectors:
+                try:
+                    element = None
+                    if ':contains' in selector:
+                        # Handle custom contains selector
+                        tag_name = selector.split(':contains')[0]
+                        search_text = selector.split('(')[1].split(')')[0].replace('"', '')
+                        elements = card_soup.find_all(tag_name)
+                        for el in elements:
+                            if search_text in el.text:
+                                # Get the next sibling or child that might contain the price
+                                next_el = el.find_next()
+                                if next_el:
+                                    element = next_el
+                                break
+                    else:
+                        element = card_soup.select_one(selector)
+                        
+                    if element and element.text.strip():
+                        financial_data["cmp"] = element.text.strip()
+                        logger.info(f"Found CMP with selector '{selector}': {financial_data['cmp']}")
+                        break
+                except Exception as e:
+                    logger.debug(f"Error with CMP selector '{selector}': {str(e)}")
+                    
+            # If still not found, try to find any element with price-like content
             if not financial_data["cmp"]:
-                alt_selectors = [
-                    'td[class*="cmp"] span', 
-                    '.currentPrice',
-                    'span[class*="price"]',
-                    '.price',
-                    'td:contains("CMP")'
+                # Look for elements containing ₹ symbol or Rs.
+                price_patterns = [
+                    r'₹\s*[\d,.]+',
+                    r'Rs\.\s*[\d,.]+',
+                    r'INR\s*[\d,.]+',
+                    r'NSE\s*:\s*[\d,.]+',
+                    r'BSE\s*:\s*[\d,.]+',
+                    r'CMP\s*:\s*[\d,.]+',
+                    r'Price\s*:\s*[\d,.]+',
+                    r'Current\s*Price\s*:\s*[\d,.]+',
                 ]
                 
-                for selector in alt_selectors:
-                    try:
-                        element = None
-                        if ':contains' in selector:
-                            # Handle custom contains selector
-                            tag_name = selector.split(':contains')[0]
-                            search_text = selector.split('(')[1].split(')')[0].replace('"', '')
-                            elements = card_soup.find_all(tag_name)
-                            for el in elements:
-                                if search_text in el.text:
-                                    # Get the next sibling or child that might contain the price
-                                    next_el = el.find_next()
-                                    if next_el:
-                                        element = next_el
-                                    break
-                        else:
-                            element = card_soup.select_one(selector)
-                            
-                        if element and element.text.strip():
-                            financial_data["cmp"] = element.text.strip()
-                            logger.info(f"Found CMP with alternate selector '{selector}': {financial_data['cmp']}")
-                            break
-                    except Exception as e:
-                        logger.debug(f"Error with alternate CMP selector '{selector}': {str(e)}")
+                all_text = card_soup.get_text()
+                for pattern in price_patterns:
+                    match = re.search(pattern, all_text)
+                    if match:
+                        financial_data["cmp"] = match.group(0)
+                        logger.info(f"Found CMP with regex pattern: {financial_data['cmp']}")
+                        break
         except Exception as e:
             logger.warning(f"Error extracting CMP: {str(e)}")
         
@@ -223,11 +248,93 @@ def extract_financial_data(card_soup: BeautifulSoup) -> Dict[str, Any]:
         ])
         
         # Extract result date if available
-        extract_metric("result_date", 'tr td.boardMeetDate', [
-            '.resultDate', 
-            'td:contains("Result Date")',
-            'td[class*="date"]'
-        ])
+        try:
+            # Try multiple selectors for result date
+            date_selectors = [
+                'tr td.boardMeetDate',
+                '.resultDate',
+                'td:contains("Result Date")',
+                'td[class*="date"]',
+                '.resdate',
+                '.resultdate',
+                '.date-time',
+                '.resinfo',
+                '.result_date',
+                '.board_meeting',
+                '.meeting_date',
+                '.announcement_date',
+                '.date_info',
+                '.result_announcement',
+                '.result_info span',
+                '.date_container'
+            ]
+            
+            for selector in date_selectors:
+                try:
+                    element = None
+                    if ':contains' in selector:
+                        # Handle custom contains selector
+                        tag_name = selector.split(':contains')[0]
+                        search_text = selector.split('(')[1].split(')')[0].replace('"', '')
+                        elements = card_soup.find_all(tag_name)
+                        for el in elements:
+                            if search_text in el.text:
+                                # Get the next sibling or child that might contain the date
+                                next_el = el.find_next()
+                                if next_el:
+                                    element = next_el
+                                else:
+                                    element = el
+                                break
+                    else:
+                        element = card_soup.select_one(selector)
+                        
+                    if element and element.text.strip():
+                        date_text = element.text.strip()
+                        if date_text and re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4}', date_text):
+                            financial_data["result_date"] = date_text
+                            logger.info(f"Found result date with selector '{selector}': {financial_data['result_date']}")
+                            break
+                except Exception as e:
+                    logger.debug(f"Error with result date selector '{selector}': {str(e)}")
+                    
+            # If still not found, try to find any element with date-like content
+            if not financial_data["result_date"]:
+                # Look for date patterns in the text
+                date_patterns = [
+                    r'Result\s*Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Board\s*Meeting\s*Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Announced\s*on\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Published\s*on\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})'
+                ]
+                
+                all_text = card_soup.get_text()
+                for pattern in date_patterns:
+                    match = re.search(pattern, all_text)
+                    if match:
+                        financial_data["result_date"] = match.group(1)
+                        logger.info(f"Found result date with regex pattern: {financial_data['result_date']}")
+                        break
+                        
+            # If still not found, try to extract from any text that looks like a date
+            if not financial_data["result_date"]:
+                all_text = card_soup.get_text()
+                date_patterns = [
+                    r'\d{1,2}[-/]\d{1,2}[-/]\d{4}',  # DD-MM-YYYY or DD/MM/YYYY
+                    r'\d{1,2}[-/]\d{1,2}[-/]\d{2}',   # DD-MM-YY or DD/MM/YY
+                    r'\d{1,2}\s+[A-Za-z]+\s+\d{4}',   # DD Month YYYY
+                    r'\d{1,2}\s+[A-Za-z]+\s+\d{2}'    # DD Month YY
+                ]
+                
+                for pattern in date_patterns:
+                    match = re.search(pattern, all_text)
+                    if match:
+                        financial_data["result_date"] = match.group(0)
+                        logger.info(f"Found result date with general date pattern: {financial_data['result_date']}")
+                        break
+        except Exception as e:
+            logger.warning(f"Error extracting result date: {str(e)}")
         
         # Set report type to quarterly by default
         financial_data["report_type"] = "Quarterly"

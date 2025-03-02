@@ -3,25 +3,80 @@ description: Debugging and Error Handling Guidelines
 globs: src/**/*.py, tests/**/*.py
 alwaysApply: false
 ---
- ---
+---
 description: Debugging and Error Handling Guidelines
-globs: src/**/*.py, tests/**/*.py
+globs: src/**/*.py, tools/**/*.py
 alwaysApply: false
+version: 1.1.0
+last_updated: 2024-03-02
 ---
 
 # Debugging and Error Handling Guidelines
 
 ## Purpose
-This rule provides guidance on implementing effective error handling and debugging practices for the StockAnalysis application based on lessons learned from troubleshooting.
+This rule provides guidance on implementing effective error handling and debugging practices for the StockAnalysis application based on lessons learned from troubleshooting and database management integration.
 
 ## Key Principles
 - ✓ Initialize all resources to a safe default value (typically None)
 - ✓ Use try/except/finally blocks for robust error handling
 - ✓ Check for None before calling methods on potentially None objects
 - ✓ Implement proper resource cleanup in finally blocks
+- ✓ Use standardized output markers for debugging and integration
 - ✓ Log detailed information at each step for traceability
-- ✓ Take screenshots or capture state for UI-based operations
 - ✓ Provide fallback strategies when primary approaches fail
+
+## Script Output Standardization
+
+### Script Status Markers
+```python
+# Use consistent status markers for script operations
+def backup_database():
+    """Backup the database with standardized output markers."""
+    try:
+        # Signal script start
+        print("SCRIPT_START: Database backup beginning")
+        
+        # Log informational steps with INFO prefix
+        print("INFO: Connecting to database")
+        print(f"INFO: Using backup directory: {BACKUP_DIR}")
+        
+        # Actual operations...
+        
+        # Signal success with SCRIPT_SUCCESS marker
+        print(f"SCRIPT_SUCCESS: Backup created successfully at {backup_file_path}")
+        
+        # Include operation-specific completion marker
+        print("BACKUP_COMPLETED: Database backup completed successfully")
+        return True
+    except Exception as e:
+        # Error handling with ERROR prefix
+        print(f"ERROR: {str(e)}")
+        
+        # Signal failure with SCRIPT_FAILURE marker
+        print("SCRIPT_FAILURE: Database backup failed with an exception")
+        
+        # Include operation-specific failure marker
+        print("BACKUP_FAILED: Database backup failed")
+        return False
+```
+
+### Structured Data Output
+```python
+# For complex data structures, use standardized format
+def output_structured_data(data):
+    """Output structured data in a parseable format."""
+    print("DATA_START")
+    print(json.dumps(data, indent=2))
+    print("DATA_END")
+
+# Example usage
+quarters_data = [
+    {"quarter": "Q1 2023", "companies": 157},
+    {"quarter": "Q2 2023", "companies": 162},
+    {"quarter": "Q3 2023", "companies": 159}
+]
+output_structured_data(quarters_data)
+```
 
 ## Resource Initialization and Cleanup
 
@@ -90,6 +145,149 @@ async def async_operation():
                 logger.warning(f"Error closing resource: {e}")
 ```
 
+## Database Operation Debugging
+
+### Database Script Debugging Pattern
+```python
+def check_database():
+    """Check database with detailed debugging output."""
+    try:
+        # Signal script start
+        print("SCRIPT_START: Database check beginning")
+        
+        # Check MongoDB connection
+        print("INFO: Connecting to MongoDB")
+        
+        if "detailed_financials" not in db.list_collection_names():
+            print("ERROR: detailed_financials collection not found")
+            print("SCRIPT_FAILURE: Collection missing")
+            return False
+            
+        # Count documents
+        doc_count = db.detailed_financials.count_documents({})
+        print(f"INFO: Found {doc_count} documents in collection")
+        
+        # Count documents by format type
+        correct_format = db.detailed_financials.count_documents({"financial_metrics": {"$exists": True}})
+        old_format = db.detailed_financials.count_documents({"financial_data": {"$exists": True}})
+        print(f"INFO: Documents with correct format: {correct_format}")
+        print(f"INFO: Documents with old format: {old_format}")
+        
+        # List quarters for validation
+        quarters_pipeline = [
+            {"$unwind": "$financial_metrics"},
+            {"$group": {"_id": "$financial_metrics.quarter"}}
+        ]
+        quarters = list(db.detailed_financials.aggregate(quarters_pipeline))
+        print(f"INFO: Found {len(quarters)} unique quarters")
+        
+        for q in quarters[:10]:  # Show only first 10
+            print(f"INFO:   - {q['_id']}")
+            
+        # Signal success
+        print("SCRIPT_SUCCESS: Database check completed successfully")
+        return True
+    except Exception as e:
+        # Error handling
+        print(f"ERROR: Database check failed: {str(e)}")
+        print("SCRIPT_FAILURE: Database check failed with exception")
+        return False
+```
+
+### Format Validation Helper
+```python
+def validate_and_debug_document(document):
+    """Validate document format with detailed debugging output."""
+    issues = []
+    
+    # Check required fields
+    required_fields = ["symbol", "company_name", "financial_metrics"]
+    for field in required_fields:
+        if field not in document:
+            issues.append(f"Missing required field: {field}")
+            
+    # Check financial metrics format
+    if "financial_metrics" in document:
+        if not isinstance(document["financial_metrics"], list):
+            issues.append("financial_metrics must be a list")
+        elif len(document["financial_metrics"]) == 0:
+            issues.append("financial_metrics is empty")
+        else:
+            # Check first financial metric
+            first_metric = document["financial_metrics"][0]
+            if not isinstance(first_metric, dict):
+                issues.append("financial_metrics contains non-dictionary item")
+            elif "quarter" not in first_metric:
+                issues.append("financial_metrics items missing quarter field")
+    
+    # Report results
+    if issues:
+        print(f"DOCUMENT_ERROR: {document['symbol'] if 'symbol' in document else 'unknown'}")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+    else:
+        print(f"DOCUMENT_VALID: {document['symbol']}")
+        return True
+```
+
+## Debugging Tools for Scripts
+
+### Script Health Check
+```python
+def perform_health_check():
+    """Perform system health check and output results."""
+    try:
+        print("HEALTH_CHECK_START")
+        
+        # Check MongoDB connection
+        mongo_ok = False
+        try:
+            client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+            client.admin.command('ping')
+            mongo_ok = True
+            print("CHECK_PASS: MongoDB connection")
+        except Exception as e:
+            print(f"CHECK_FAIL: MongoDB connection - {str(e)}")
+            
+        # Check disk space
+        space_ok = False
+        try:
+            total, used, free = shutil.disk_usage(BACKUP_DIR)
+            free_gb = free / (1024 * 1024 * 1024)
+            space_ok = free_gb > 1.0  # Require at least 1 GB free
+            status = "PASS" if space_ok else "FAIL"
+            print(f"CHECK_{status}: Disk space - {free_gb:.2f} GB free")
+        except Exception as e:
+            print(f"CHECK_FAIL: Disk space check - {str(e)}")
+            
+        # Check required files
+        files_ok = True
+        required_files = [
+            ("Configuration", ".env"),
+            ("Backup directory", "db_backups")
+        ]
+        
+        for name, path in required_files:
+            if not os.path.exists(path):
+                files_ok = False
+                print(f"CHECK_FAIL: {name} not found at {path}")
+            else:
+                print(f"CHECK_PASS: {name} found")
+                
+        # Output final result
+        all_ok = mongo_ok and space_ok and files_ok
+        status = "PASS" if all_ok else "FAIL"
+        print(f"HEALTH_CHECK_{status}")
+        print("HEALTH_CHECK_END")
+        
+        return all_ok
+    except Exception as e:
+        print(f"HEALTH_CHECK_ERROR: {str(e)}")
+        print("HEALTH_CHECK_FAIL")
+        return False
+```
+
 ## Logging Guidelines
 
 - Include timestamps, module name, and log level in all logs
@@ -102,6 +300,35 @@ async def async_operation():
 - Log the full stack trace for unexpected errors
 - Include context in log messages (IDs, parameters, etc.)
 - Use structured logging for machine-parseable logs
+
+## Output Standardization Lessons
+
+1. **Script State Markers**
+   - ✓ Use "SCRIPT_START" at the beginning of execution
+   - ✓ Use "SCRIPT_SUCCESS" for successful completion
+   - ✓ Use "SCRIPT_FAILURE" for failed execution
+   - ✓ Include operation-specific markers like "BACKUP_COMPLETED"
+   - ✓ Return appropriate exit codes (0 for success, non-zero for failure)
+
+2. **Information Categorization**
+   - ✓ Prefix informational messages with "INFO:"
+   - ✓ Prefix error messages with "ERROR:"
+   - ✓ Prefix warning messages with "WARNING:"
+   - ✓ Format structured data between "DATA_START" and "DATA_END"
+   - ✓ Include useful context in all messages
+
+3. **Error Formatting**
+   - ✓ Include clear cause in error messages
+   - ✓ Wrap error details with context about the operation
+   - ✓ Chain error messages when appropriate ("X failed because Y")
+   - ✓ Avoid exposing sensitive information in error messages
+   - ✓ Ensure frontend can extract and parse error information
+
+4. **Exit Codes**
+   - ✓ Use sys.exit(0) for successful script completion
+   - ✓ Use sys.exit(1) for general failures
+   - ✓ Document exit code meanings for scripts
+   - ✓ Ensure calling processes can detect failure via exit code
 
 ## Fallback Strategies
 
@@ -128,16 +355,6 @@ def extract_data_with_fallback(source, fallback_sources=None):
         return default_value()
 ```
 
-## Debugging Tools and Techniques
-
-- Use snapshot testing to detect regressions
-- Implement toggle-able debug mode that increases log verbosity
-- Save intermediate state during complex operations
-- Use proper exception hierarchies to enable specific error handling
-- Implement health checks and monitoring for production services
-- Use visualization tools for complex data structures
-- Create reproducible test cases for complex bugs
-
 ## Testing for Error Conditions
 
 ```python
@@ -160,4 +377,18 @@ def test_resource_cleanup_on_error():
                 mock_db.close.assert_called_once()
 ```
 
-These guidelines help ensure robust error handling and effective debugging throughout the application.
+## Debugging Script Integration Points
+
+1. **Include Version Information**
+   - ✓ Output Python version for diagnostics
+   - ✓ Output package versions for dependencies
+   - ✓ Include timestamp and script name in output
+   - ✓ Document OS compatibility requirements
+
+2. **Resource Path Validation**
+   - ✓ Check that required files exist before using them
+   - ✓ Validate directories are writable before writing
+   - ✓ Provide clear error messages when resources are missing
+   - ✓ Use absolute paths or consistent relative paths
+
+These guidelines help ensure robust error handling and effective debugging throughout the application, particularly for database operations and script integration points.

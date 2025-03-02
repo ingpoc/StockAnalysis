@@ -7,9 +7,21 @@ alwaysApply: false
 description: Guidelines for creating and optimizing rules
 globs: .cursor/rules/*.mdc
 alwaysApply: false
+version: 1.2.0
+last_updated: 2024-03-02
 ---
 
 # Rule Creation Guidelines
+
+## Purpose
+Guidelines for creating targeted, effective rules that aid AI in development and debugging rather than providing exhaustive instructions.
+
+## Key Principles
+- ✓ Focus on specific development challenges rather than general documentation
+- ✓ Prioritize practical, actionable guidance over theoretical explanations
+- ✓ Emphasize patterns that worked in real-world implementation
+- ✓ Update based on lessons learned during development
+- ✓ Maintain cross-references between related rules
 
 ## Rule Structure
 All rules should follow this consistent structure:
@@ -20,6 +32,8 @@ All rules should follow this consistent structure:
    description: Brief description of the rule's purpose
    globs: path/to/relevant/files/*.extension
    alwaysApply: false
+   version: 1.0.0
+   last_updated: YYYY-MM-DD
    ---
    ```
 
@@ -34,52 +48,108 @@ All rules should follow this consistent structure:
 4. **Key Principles**
    3-5 bullet points of the most important guidelines to follow.
 
-5. **References** (Optional)
+5. **Implementation Patterns** (Optional)
+   Concise code snippets showing how to implement the rule.
+
+6. **References** (Optional)
    Links to more detailed documentation or examples.
 
-6. **Examples**
-   1-2 simple examples that demonstrate the rule in practice.
+## When to Create vs Update Rules
+
+### Create New Rules When:
+- ✓ Addressing a completely new development concern
+- ✓ Implementing patterns that don't fit in existing rules
+- ✓ Establishing guidance for a new technology or approach
+- ✓ Introducing a system-wide pattern that spans multiple contexts
+
+### Update Existing Rules When:
+- ✓ Improving guidance based on implementation experience
+- ✓ Adding more specific implementation patterns
+- ✓ Refining existing approaches based on feedback
+- ✓ Addressing edge cases in existing patterns
+
+## Handling Cross-Rule Dependencies
+
+### Effective Dependency Management
+- ✓ Use cross-references to link related rules (`See [related-rule.mdc]`)
+- ✓ Maintain a "Related Rules" section in each rule
+- ✓ Avoid duplicating patterns that exist in other rules
+- ✓ Update dependent rules when primary patterns change
+
+### Example of Good Cross-Referencing:
+```markdown
+## Database Operations
+For detailed guidance on validating database structures, see [database-validation.mdc].
+This rule focuses only on data safety during operations.
+```
+
+## Effective vs Ineffective Rules
+
+### Effective Rule:
+```markdown
+# Script Output Standardization
+
+## Purpose
+Guidelines for creating consistent, parseable output from Python scripts that can be reliably processed by frontend components.
+
+## Key Principles
+- ✓ Use standard markers like `SCRIPT_SUCCESS` and `SCRIPT_FAILURE` 
+- ✓ Prefix log lines with context tags (INFO, ERROR, WARNING)
+- ✓ Include detailed error messages with context information
+
+## Implementation Pattern
+```python
+def main():
+    try:
+        print("SCRIPT_START: Operation beginning")
+        print(f"INFO: Connecting to database")
+        print(f"SCRIPT_SUCCESS: Operation completed successfully")
+        return True
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        print("SCRIPT_FAILURE: Operation failed")
+        return False
+```
+```
+
+### Ineffective Rule:
+```markdown
+# Python Best Practices
+
+## Overview
+This document explains Python best practices for the project.
+
+## Details
+Python scripts should be well-documented.
+Error handling is important in Python code.
+You should use try/except blocks for error handling.
+Log messages help with debugging.
+Consider using environment variables for configuration.
+```
+
+## Lessons From Database Management Features
+
+### Implementation Patterns That Worked Well
+- ✓ Standardized script output markers for success/failure detection
+- ✓ Structured error messages with context and cause
+- ✓ Consistent resource cleanup in finally blocks
+- ✓ Detailed logging with context prefixes (INFO, ERROR)
+- ✓ Appropriate exit codes for process status
+
+### Patterns to Avoid
+- ✗ Mixing logging and output parsing in the same stream
+- ✗ Unstructured or inconsistent error messages
+- ✗ Missing critical operation markers (start, success, failure)
+- ✗ Failing to clean up resources in error conditions
+- ✗ Ambiguous output formats that make parsing difficult
 
 ## Rule Best Practices
 
-- ✓ Keep rules concise and focused on a single concern
-- ✓ Use clear, actionable language
-- ✓ Include checkmarks (✓) for list items to improve readability
-- ✓ Avoid excessive code examples and details
+- ✓ Keep rules focused on specific development or debugging challenges
+- ✓ Include checkmarks (✓) for positive guidance and (✗) for anti-patterns
+- ✓ Use concrete code examples that demonstrate real-world solutions
 - ✓ Cross-reference other rules instead of duplicating content
-- ✓ Update rules when project requirements change
+- ✓ Update rules based on lessons learned during development
+- ✓ Include version information and last updated date
 
-## Example Rule Format
-
-```markdown
----
-description: Database Validation Guidelines
-globs: src/**/*.py
-alwaysApply: false
----
-
-# Database Validation Guidelines
-
-## Purpose
-This rule provides guidance on how to validate database operations and ensure data integrity in the StockAnalysis application.
-
-## Key Principles
-- ✓ Use MongoDB shell (mongosh) for direct database validation
-- ✓ Validate all required fields exist with correct data types
-- ✓ Verify relationships between collections are maintained
-- ✓ Check for duplicate entries and data consistency
-- ✓ Prefer API endpoint testing over creating test files
-
-## References
-- See `tools/scripts/validate_database.py` for automated validation
-- Refer to MongoDB documentation: https://docs.mongodb.com/manual/
-
-## Examples
-```javascript
-// Example: Validate stock data in MongoDB shell
-use stock_data
-db.detailed_financials.find({symbol: "RANASUG"})
-```
-```
-
-This structure ensures that all rules are consistent, concise, and easy to follow.
+This structure ensures rules are targeted, practical, and directly assist the AI in addressing specific development challenges.

@@ -139,53 +139,32 @@ async def scrape_single_stock(driver, url, db_collection=None):
         # Extract symbol from the page - try multiple approaches
         symbol = None
         try:
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            # Try to find symbol in the page content
+            symbol_elements = [
+                driver.find_elements(By.CSS_SELECTOR, '.pcstname span'),
+                driver.find_elements(By.CSS_SELECTOR, '.inid_name span'),
+                driver.find_elements(By.CSS_SELECTOR, '.stockname span'),
+                driver.find_elements(By.CSS_SELECTOR, '.bsedata_bx span')
+            ]
             
-            # Try to extract from URL directly (most reliable)
-            url_parts = url.split('/')
-            if len(url_parts) > 0 and url_parts[-1].startswith('MS'):
-                symbol = url_parts[-1]
-                logger.info(f"Extracted symbol from URL: {symbol}")
-                
-            # If not found in URL, try other methods
-            if not symbol:
-                # Try main selector
-                symbol_elem = soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p')
-                if symbol_elem:
-                    symbol = symbol_elem.text.strip()
-                    logger.info(f"Extracted symbol from company info: {symbol}")
+            for elements in symbol_elements:
+                if elements and len(elements) > 0:
+                    for element in elements:
+                        text = element.text.strip()
+                        if text and '(' in text and ')' in text:
+                            # Extract text between parentheses
+                            symbol = text.split('(')[1].split(')')[0].strip()
+                            logger.info(f"Extracted symbol from element: {symbol}")
+                            break
+                    if symbol:
+                        break
             
-            # Try alternative selector
-            if not symbol:
-                alt_symbol_elem = soup.select_one('.nsestock_overview table tr:nth-child(1) td:nth-child(1)')
-                if alt_symbol_elem:
-                    symbol_text = alt_symbol_elem.text.strip()
-                    if ':' in symbol_text:
-                        symbol = symbol_text.split(':')[1].strip()
-                        logger.info(f"Extracted symbol from stock overview: {symbol}")
-            
-            # Try extracting from breadcrumbs
-            if not symbol:
-                breadcrumb_elem = soup.select_one('.breadcrumb span')
-                if breadcrumb_elem:
-                    symbol = breadcrumb_elem.text.strip()
-                    logger.info(f"Extracted symbol from breadcrumb: {symbol}")
-            
-            # Try alternative - extract from title
-            if not symbol and '(' in page_title and ')' in page_title:
-                symbol_part = page_title.split('(')[1].split(')')[0]
-                if symbol_part:
-                    symbol = symbol_part
-                    logger.info(f"Extracted symbol from title: {symbol}")
-            
-            # Fallback to company name if still no symbol
-            if not symbol:
-                # Use the stock code from the URL if available
-                if 'stockpricequote' in url:
-                    url_parts = url.split('/')
-                    if len(url_parts) >= 2:
-                        symbol = url_parts[-1]  # Use the last part of the URL as symbol
-                        logger.info(f"Using URL last segment as symbol: {symbol}")
+            # If still no symbol, try to extract from URL
+            if not symbol and 'stockpricequote' in url:
+                url_parts = url.split('/')
+                if len(url_parts) >= 2:
+                    symbol = url_parts[-1]  # Use the last part of the URL as symbol
+                    logger.info(f"Using URL last segment as symbol: {symbol}")
             
             # Finally, if we still have no symbol, use the company name
             if not symbol:
@@ -214,96 +193,245 @@ async def scrape_single_stock(driver, url, db_collection=None):
         
         # Extract stock price (CMP)
         try:
-            cmp_elem = driver.find_element(By.CSS_SELECTOR, '.pcstktxt span:first-child')
-            if cmp_elem:
-                financial_data["cmp"] = cmp_elem.text.strip()
-                logger.info(f"Extracted CMP: {financial_data['cmp']}")
+            # Try multiple selectors for CMP
+            cmp_selectors = [
+                '.pcstktxt span:first-child',
+                '.nsecp, .bsecp',
+                '.stock-price',
+                '.stprice',
+                '.priceinfo span',
+                '.price_wrapper span',
+                '.stock_price',
+                '.nse_bse_sub_prices span:first-child',
+                '.stock_details .price',
+                '.stock-current-price'
+            ]
+            
+            for selector in cmp_selectors:
+                try:
+                    cmp_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                    if cmp_elem and cmp_elem.text.strip():
+                        financial_data["cmp"] = cmp_elem.text.strip()
+                        logger.info(f"Extracted CMP with selector '{selector}': {financial_data['cmp']}")
+                        break
+                except Exception:
+                    continue
+                    
+            # If still not found, try to find any element with price-like content
+            if not financial_data["cmp"]:
+                # Look for elements containing ₹ symbol or Rs.
+                price_patterns = [
+                    r'₹\s*[\d,.]+',
+                    r'Rs\.\s*[\d,.]+',
+                    r'INR\s*[\d,.]+',
+                    r'NSE\s*:\s*[\d,.]+',
+                    r'BSE\s*:\s*[\d,.]+',
+                    r'CMP\s*:\s*[\d,.]+',
+                    r'Price\s*:\s*[\d,.]+',
+                    r'Current\s*Price\s*:\s*[\d,.]+',
+                ]
+                
+                page_source = driver.page_source
+                for pattern in price_patterns:
+                    match = re.search(pattern, page_source)
+                    if match:
+                        financial_data["cmp"] = match.group(0)
+                        logger.info(f"Extracted CMP with regex pattern: {financial_data['cmp']}")
+                        break
         except Exception as e:
             logger.debug(f"Error extracting CMP: {str(e)}")
         
-        # Try to extract quarter info from page
+        # Extract quarter information
         try:
-            quarter_elem = driver.find_element(By.CSS_SELECTOR, '.qtrend')
-            if quarter_elem:
-                quarter_text = quarter_elem.text.strip()
-                # Extract quarter information (Q1/Q2/Q3/Q4 and year)
-                # This is a simplistic approach and might need adjustment
-                if "Q1" in quarter_text:
-                    financial_data["quarter"] = f"Q1 {quarter_text.split('Q1')[1].strip()}"
-                elif "Q2" in quarter_text:
-                    financial_data["quarter"] = f"Q2 {quarter_text.split('Q2')[1].strip()}"
-                elif "Q3" in quarter_text:
-                    financial_data["quarter"] = f"Q3 {quarter_text.split('Q3')[1].strip()}"
-                elif "Q4" in quarter_text:
-                    financial_data["quarter"] = f"Q4 {quarter_text.split('Q4')[1].strip()}"
-                logger.info(f"Extracted quarter: {financial_data['quarter']}")
+            # Try to find quarter info in the page
+            quarter_selectors = [
+                '.qtrheading',
+                '.qtrheding',
+                '.qtrending',
+                'h2.mainheading',
+                '.mainheading',
+                '.qtrinfo'
+            ]
+            
+            for selector in quarter_selectors:
+                try:
+                    quarter_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                    if quarter_elem:
+                        quarter_text = quarter_elem.text.strip()
+                        if quarter_text and ('Q1' in quarter_text or 'Q2' in quarter_text or 'Q3' in quarter_text or 'Q4' in quarter_text or 'FY' in quarter_text):
+                            financial_data["quarter"] = quarter_text
+                            logger.info(f"Extracted quarter: {financial_data['quarter']}")
+                            break
+                except Exception:
+                    continue
+            
+            # If still no quarter info, try to extract from the URL
+            if not financial_data["quarter"] and "quarter=" in url:
+                quarter_match = re.search(r'quarter=([^&]+)', url)
+                if quarter_match:
+                    financial_data["quarter"] = quarter_match.group(1)
+                    logger.info(f"Extracted quarter from URL: {financial_data['quarter']}")
+            
+            # If still no quarter, try to extract from page title
+            if not financial_data["quarter"] and page_title and ('Q1' in page_title or 'Q2' in page_title or 'Q3' in page_title or 'Q4' in page_title or 'FY' in page_title):
+                # Extract quarter pattern from title
+                quarter_match = re.search(r'(Q[1-4]|FY)[-\s]?(\d{2}[-\s]?\d{2}|\d{4}[-\s]?\d{2}|\d{4})', page_title)
+                if quarter_match:
+                    financial_data["quarter"] = quarter_match.group(0)
+                    logger.info(f"Extracted quarter from title: {financial_data['quarter']}")
         except Exception as e:
             logger.debug(f"Error extracting quarter info: {str(e)}")
+        
+        # Extract financial metrics using the extract_financial_data function
+        try:
+            # Convert driver's page source to BeautifulSoup object
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
             
-        # If we couldn't extract quarter, set a reasonable default
-        if not financial_data["quarter"]:
-            # Get current fiscal year (April to March in India)
-            now = datetime.now()
-            month = now.month
-            year = now.year
+            # Call extract_financial_data with the soup object
+            extracted_data = extract_financial_data(soup)
+            if extracted_data:
+                # Update financial data with extracted metrics
+                for key, value in extracted_data.items():
+                    if value is not None:
+                        financial_data[key] = value
+                        logger.info(f"Extracted {key}: {value}")
+        except Exception as e:
+            logger.error(f"Error extracting financial data: {str(e)}")
+        
+        # Extract report type (Standalone/Consolidated)
+        try:
+            report_type_selectors = [
+                '.consotabs li.active',
+                '.standalone',
+                '.consolidated',
+                '.repttype'
+            ]
             
-            # Determine the fiscal year
-            if month < 4:  # January to March
-                fiscal_year = f"FY{str(year-1)[-2:]}-{str(year)[-2:]}"
-            else:  # April to December
-                fiscal_year = f"FY{str(year)[-2:]}-{str(year+1)[-2:]}"
+            for selector in report_type_selectors:
+                try:
+                    report_type_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                    if report_type_elem:
+                        report_type = report_type_elem.text.strip()
+                        if report_type and ('Standalone' in report_type or 'Consolidated' in report_type):
+                            financial_data["report_type"] = report_type
+                            logger.info(f"Extracted report type: {financial_data['report_type']}")
+                            break
+                except Exception:
+                    continue
+        except Exception as e:
+            logger.debug(f"Error extracting report type: {str(e)}")
+        
+        # Extract result date
+        try:
+            # Try multiple selectors for result date
+            date_selectors = [
+                '.resdate',
+                '.resultdate',
+                '.date-time',
+                '.resinfo',
+                '.result_date',
+                '.board_meeting',
+                '.meeting_date',
+                '.announcement_date',
+                '.date_info',
+                '.result_announcement',
+                '.result_info span',
+                '.date_container'
+            ]
             
-            # Determine the quarter based on the month
-            if month in [4, 5, 6]:
-                quarter = "Q1"
-            elif month in [7, 8, 9]:
-                quarter = "Q2"
-            elif month in [10, 11, 12]:
-                quarter = "Q3"
-            else:  # month in [1, 2, 3]
-                quarter = "Q4"
-            
-            financial_data["quarter"] = f"{quarter} {fiscal_year}"
-            logger.info(f"Using default quarter: {financial_data['quarter']}")
-
-        # Use the more reliable test script approach for additional metrics
+            for selector in date_selectors:
+                try:
+                    date_elem = driver.find_element(By.CSS_SELECTOR, selector)
+                    if date_elem:
+                        date_text = date_elem.text.strip()
+                        if date_text and re.search(r'\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4}', date_text):
+                            financial_data["result_date"] = date_text
+                            logger.info(f"Extracted result date with selector '{selector}': {financial_data['result_date']}")
+                            break
+                except Exception:
+                    continue
+                    
+            # If still not found, try to find any element with date-like content
+            if not financial_data["result_date"]:
+                # Look for date patterns in the page source
+                date_patterns = [
+                    r'Result\s*Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Board\s*Meeting\s*Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Announced\s*on\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Published\s*on\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})',
+                    r'Date\s*:\s*(\d{1,2}[-/]\d{1,2}[-/]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})'
+                ]
+                
+                page_source = driver.page_source
+                for pattern in date_patterns:
+                    match = re.search(pattern, page_source)
+                    if match:
+                        financial_data["result_date"] = match.group(1)
+                        logger.info(f"Extracted result date with regex pattern: {financial_data['result_date']}")
+                        break
+                        
+            # If still not found, try to extract from any text that looks like a date
+            if not financial_data["result_date"]:
+                all_text = driver.page_source
+                date_patterns = [
+                    r'\d{1,2}[-/]\d{1,2}[-/]\d{4}',  # DD-MM-YYYY or DD/MM/YYYY
+                    r'\d{1,2}[-/]\d{1,2}[-/]\d{2}',   # DD-MM-YY or DD/MM/YY
+                    r'\d{1,2}\s+[A-Za-z]+\s+\d{4}',   # DD Month YYYY
+                    r'\d{1,2}\s+[A-Za-z]+\s+\d{2}'    # DD Month YY
+                ]
+                
+                for pattern in date_patterns:
+                    match = re.search(pattern, all_text)
+                    if match:
+                        financial_data["result_date"] = match.group(0)
+                        logger.info(f"Extracted result date with general date pattern: {financial_data['result_date']}")
+                        break
+        except Exception as e:
+            logger.debug(f"Error extracting result date: {str(e)}")
+        
+        # Get additional metrics from the KnowBeforeYouInvest section
         additional_metrics = await extract_know_before_invest_data(driver, company_name)
         
         if additional_metrics:
             # Update financial data with additional metrics
-            financial_data.update(additional_metrics)
+            for key, value in additional_metrics.items():
+                if value is not None:
+                    financial_data[key] = value
+                    logger.info(f"Added additional metric {key}: {value}")
             
         # Check database for existing data and handle
         existing_company = None
         if db_collection is not None and financial_data.get('quarter') is not None:
             try:
-                existing_company = await db_collection.find_one({"company_name": company_name})
-                if existing_company is not None:
-                    existing_quarters = [metric.get('quarter') for metric in existing_company.get('financial_metrics', []) if metric.get('quarter')]
-                    if financial_data['quarter'] in existing_quarters:
-                        logger.info(f"{company_name} already has data for {financial_data['quarter']}. Updating.")
-                        await db_collection.update_one(
-                            {
-                                "company_name": company_name,
-                                "financial_metrics.quarter": financial_data['quarter']
-                            },
-                            {"$set": {"financial_metrics.$": financial_data}}
-                        )
-                    else:
-                        logger.info(f"Adding new quarter data for {company_name} - {financial_data['quarter']}")
+                quarter = financial_data.get('quarter')
+                exists = await check_company_quarter_exists(db_collection, company_name, quarter)
+                
+                if exists:
+                    logger.info(f"{company_name} already has data for {quarter}. Updating.")
+                    await db_collection.update_one(
+                        {
+                            "company_name": company_name,
+                            "financial_metrics.quarter": quarter
+                        },
+                        {"$set": {"financial_metrics.$": financial_data}}
+                    )
+                else:
+                    existing_company = await db_collection.find_one({"company_name": company_name})
+                    if existing_company is not None:
+                        logger.info(f"Adding new quarter data for {company_name} - {quarter}")
                         await db_collection.update_one(
                             {"company_name": company_name},
                             {"$push": {"financial_metrics": financial_data}}
                         )
-                else:
-                    logger.info(f"Creating new entry for {company_name}")
-                    new_stock_data = {
-                        "company_name": company_name,
-                        "symbol": symbol,
-                        "financial_metrics": [financial_data],
-                        "timestamp": datetime.now()
-                    }
-                    await db_collection.insert_one(new_stock_data)
+                    else:
+                        logger.info(f"Creating new entry for {company_name}")
+                        new_stock_data = {
+                            "company_name": company_name,
+                            "symbol": symbol,
+                            "financial_metrics": [financial_data],
+                            "timestamp": datetime.now()
+                        }
+                        await db_collection.insert_one(new_stock_data)
                     
                 logger.info(f"Data for {company_name} processed and saved to database.")
             except Exception as e:
@@ -750,6 +878,17 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=No
                 except Exception:
                     pass
 
+                # Check if we already have this company and quarter in the database before proceeding
+                if db_collection is not None and financial_data.get("quarter"):
+                    try:
+                        quarter = financial_data.get("quarter")
+                        exists = await check_company_quarter_exists(db_collection, company_name, quarter)
+                        if exists:
+                            logger.info(f"Company {company_name} already has data for quarter {quarter}. Skipping.")
+                            continue
+                    except Exception as e:
+                        logger.error(f"Error checking for existing company data: {e}")
+
                 # Now navigate to the stock page and extract more detailed data
                 logger.info(f"Navigating to stock URL: {stock_url}")
                 try:
@@ -816,15 +955,15 @@ async def scrape_earnings_list(driver, url, db_collection=None, max_companies=No
                     if db_collection is not None:
                         # First, check if we already have this company in the database
                         existing_company = await db_collection.find_one({"company_name": company_name})
+                        quarter = financial_data.get("quarter")
                         
                         if existing_company is not None:
                             # Company exists - check if it has the right structure
                             if "financial_metrics" in existing_company:
                                 # Has the right structure - check if this quarter already exists
-                                quarter = financial_data.get("quarter")
-                                existing_quarters = [metric.get("quarter") for metric in existing_company.get("financial_metrics", []) if metric.get("quarter")]
+                                exists = await check_company_quarter_exists(db_collection, company_name, quarter)
                                 
-                                if quarter and quarter in existing_quarters:
+                                if exists and quarter:
                                     # Update the existing quarter
                                     logger.info(f"Updating existing quarter {quarter} for {company_name}")
                                     await db_collection.update_one(
@@ -985,4 +1124,48 @@ async def get_company_financials(company_name: str, db_collection: AsyncIOMotorC
         return await db_collection.find_one({"company_name": company_name})
     except Exception as e:
         logger.error(f"Error retrieving company data: {str(e)}")
-        return None 
+        return None
+
+async def check_company_quarter_exists(db_collection, company_name, quarter):
+    """
+    Check if data for a specific company and quarter already exists in the database.
+    
+    Args:
+        db_collection: MongoDB collection
+        company_name: Name of the company
+        quarter: Quarter to check
+        
+    Returns:
+        bool: True if the company and quarter combination exists, False otherwise
+    """
+    if not db_collection or not company_name or not quarter:
+        return False
+        
+    try:
+        # Find the company document
+        existing_company = await db_collection.find_one({"company_name": company_name})
+        
+        if existing_company and "financial_metrics" in existing_company:
+            # Check if this quarter exists in the financial metrics
+            existing_quarters = [
+                metric.get("quarter") for metric in existing_company.get("financial_metrics", [])
+                if metric.get("quarter")
+            ]
+            
+            # Check if the quarter exists (exact match)
+            if quarter in existing_quarters:
+                logger.info(f"Company {company_name} already has data for quarter {quarter}")
+                return True
+                
+            # Also check for similar quarters (sometimes format might be slightly different)
+            quarter_pattern = re.sub(r'\s+', '', quarter).lower()
+            for existing_quarter in existing_quarters:
+                existing_pattern = re.sub(r'\s+', '', existing_quarter).lower()
+                if quarter_pattern == existing_pattern:
+                    logger.info(f"Company {company_name} already has data for similar quarter {existing_quarter} (requested: {quarter})")
+                    return True
+                    
+        return False
+    except Exception as e:
+        logger.error(f"Error checking for existing company quarter: {str(e)}")
+        return False 

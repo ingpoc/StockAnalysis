@@ -5,21 +5,24 @@ alwaysApply: false
 ---
 ---
 description: Database Validation Guidelines
-globs: src/**/*.py
+globs: src/**/*.py, tools/**/*.py
 alwaysApply: false
+version: 1.1.0
+last_updated: 2024-03-02
 ---
 
 # Database Validation Guidelines
 
 ## Purpose
-This rule provides guidance on how to validate database operations and ensure data integrity in the StockAnalysis application without creating test files.
+This rule provides guidance on how to validate database operations and ensure data integrity in the StockAnalysis application, with special focus on backup, restore, and data format consistency.
 
 ## Key Principles
 - ✓ Use MongoDB shell (mongosh) for direct database validation
 - ✓ Validate all required fields exist with correct data types
 - ✓ Verify relationships between collections are maintained
 - ✓ Check for duplicate entries and data consistency
-- ✓ Use the validation utility script for comprehensive checks
+- ✓ Use standardized script outputs for operation status
+- ✓ Implement safe backup/restore operations with validation
 - ✓ Properly manage database connections in both production and test code
 
 ## Connection Management Best Practices
@@ -32,7 +35,7 @@ try:
     db_client = AsyncIOMotorClient(MONGO_URL)
     
     # Use the connection
-    db = db_client.get_database("stock_analysis")
+    db = db_client.get_database("stock_data")
     collection = db.get_collection("companies")
     results = await collection.find({}).to_list(length=10)
     
@@ -48,8 +51,245 @@ finally:
             logger.warning(f"Error closing database connection: {e}")
 ```
 
+## Database Backup Validation
+
+### Backup Pre-Validation
+```python
+def validate_before_backup():
+    """Validate database status before backup."""
+    try:
+        # Check if collection exists
+        if COLLECTION_NAME not in db.list_collection_names():
+            print(f"ERROR: {COLLECTION_NAME} collection does not exist")
+            print("SCRIPT_FAILURE: Database backup failed - collection not found")
+            return False
+        
+        # Check if collection has documents
+        doc_count = db[COLLECTION_NAME].count_documents({})
+        print(f"INFO: Found {doc_count} documents in {COLLECTION_NAME}")
+        
+        if doc_count == 0:
+            print(f"WARNING: No documents found in {COLLECTION_NAME}")
+            print("SCRIPT_FAILURE: Database backup failed - no documents found")
+            return False
+            
+        # Ensure backup directory exists
+        os.makedirs(BACKUP_DIR, exist_ok=True)
+        print(f"INFO: Backup directory: {BACKUP_DIR}")
+        
+        return True
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        print("SCRIPT_FAILURE: Pre-backup validation failed")
+        return False
+```
+
+### Backup Post-Validation
+```python
+def validate_after_backup(backup_file, original_count):
+    """Validate backup was successful."""
+    try:
+        # Check if backup file exists
+        if not os.path.exists(backup_file):
+            print(f"ERROR: Backup file was not created: {backup_file}")
+            return False
+            
+        # Check file size is reasonable
+        file_size = os.path.getsize(backup_file)
+        print(f"INFO: Backup file size: {file_size / (1024 * 1024):.2f} MB")
+        
+        if file_size < 100:  # Extremely small file likely indicates an error
+            print(f"WARNING: Backup file is suspiciously small: {file_size} bytes")
+            return False
+            
+        # Validate JSON format
+        try:
+            with open(backup_file, 'r') as f:
+                backup_data = json.loads(f.read())
+                
+            # Check document count matches original
+            if len(backup_data) != original_count:
+                print(f"ERROR: Document count mismatch. Original: {original_count}, Backup: {len(backup_data)}")
+                return False
+                
+            print(f"INFO: Backup file validated successfully: {backup_file}")
+            print(f"SCRIPT_SUCCESS: Backup created successfully at {backup_file}")
+            return True
+        except json.JSONDecodeError:
+            print(f"ERROR: Backup file is not valid JSON: {backup_file}")
+            return False
+    except Exception as e:
+        print(f"ERROR: Backup validation failed: {str(e)}")
+        return False
+```
+
+## Database Restore Validation
+
+### Restore Pre-Validation
+```python
+def validate_backup_before_restore(backup_file):
+    """Validate backup file before restore."""
+    try:
+        # Check if backup file exists
+        if not os.path.exists(backup_file):
+            print(f"ERROR: Backup file not found: {backup_file}")
+            print("SCRIPT_FAILURE: Database restore failed - backup file not found")
+            return False
+            
+        # Check file size and format
+        file_size = os.path.getsize(backup_file)
+        print(f"INFO: Backup file size: {file_size / (1024 * 1024):.2f} MB")
+        
+        # Validate JSON format and count documents
+        try:
+            with open(backup_file, 'r') as f:
+                backup_data = json.loads(f.read())
+                
+            doc_count = len(backup_data)
+            print(f"INFO: Found {doc_count} documents in backup file")
+            
+            if doc_count == 0:
+                print("WARNING: No documents found in backup file")
+                print("SCRIPT_FAILURE: Database restore failed - empty backup")
+                return False
+                
+            return True
+        except json.JSONDecodeError:
+            print(f"ERROR: Backup file is not valid JSON: {backup_file}")
+            print("SCRIPT_FAILURE: Database restore failed - invalid backup format")
+            return False
+    except Exception as e:
+        print(f"ERROR: {str(e)}")
+        print("SCRIPT_FAILURE: Backup validation failed")
+        return False
+```
+
+### Restore Post-Validation
+```python
+def validate_after_restore(expected_count):
+    """Validate database after restore."""
+    try:
+        # Count documents after restore
+        actual_count = db[COLLECTION_NAME].count_documents({})
+        print(f"INFO: Found {actual_count} documents after restore")
+        
+        # Check counts match
+        if actual_count != expected_count:
+            print(f"ERROR: Document count mismatch after restore. Expected: {expected_count}, Actual: {actual_count}")
+            return False
+            
+        # Check a sample document has expected structure
+        sample = db[COLLECTION_NAME].find_one({})
+        if not sample:
+            print("ERROR: Could not retrieve sample document after restore")
+            return False
+            
+        # Check critical fields exist
+        required_fields = ["symbol", "financial_metrics"]
+        for field in required_fields:
+            if field not in sample:
+                print(f"ERROR: Required field '{field}' missing in restored data")
+                return False
+                
+        print("INFO: Database restored successfully")
+        print("SCRIPT_SUCCESS: Database successfully restored from backup")
+        return True
+    except Exception as e:
+        print(f"ERROR: Restore validation failed: {str(e)}")
+        return False
+```
+
+## Data Format Consistency
+
+### Format Validation Functions
+```python
+def validate_document_format(document):
+    """Validate document has the expected format."""
+    # Check basic structure
+    if not isinstance(document, dict):
+        return False, "Document is not a dictionary"
+        
+    # Check required fields
+    required_fields = ["symbol", "company_name"]
+    for field in required_fields:
+        if field not in document:
+            return False, f"Required field missing: {field}"
+            
+    # Check financial metrics format
+    if "financial_metrics" not in document:
+        return False, "Financial metrics missing"
+        
+    if not isinstance(document["financial_metrics"], list):
+        return False, "Financial metrics must be an array"
+        
+    # Check at least one financial metric has a quarter
+    has_quarter = any(
+        isinstance(metric, dict) and "quarter" in metric 
+        for metric in document["financial_metrics"]
+    )
+    
+    if not has_quarter:
+        return False, "No valid quarters found in financial metrics"
+        
+    return True, "Document format is valid"
+```
+
+### Reporting Format Issues
+```python
+def check_database_format():
+    """Check entire database for format consistency."""
+    try:
+        print("SCRIPT_START: Database format check beginning")
+        
+        # Count documents with correct and incorrect formats
+        correct_format_count = db.detailed_financials.count_documents({
+            "financial_metrics": {"$exists": True, "$type": "array"}
+        })
+        
+        old_format_count = db.detailed_financials.count_documents({
+            "financial_data": {"$exists": True}
+        })
+        
+        missing_required_count = db.detailed_financials.count_documents({
+            "$or": [
+                {"symbol": {"$exists": False}},
+                {"company_name": {"$exists": False}}
+            ]
+        })
+        
+        print(f"INFO: Documents with correct format: {correct_format_count}")
+        print(f"INFO: Documents with old format: {old_format_count}")
+        print(f"INFO: Documents missing required fields: {missing_required_count}")
+        
+        # Check for quarters consistency
+        quarters_pipeline = [
+            {"$unwind": "$financial_metrics"},
+            {"$group": {"_id": "$financial_metrics.quarter"}},
+            {"$match": {"_id": {"$ne": None}}},
+            {"$sort": {"_id": -1}}
+        ]
+        
+        quarters = list(db.detailed_financials.aggregate(quarters_pipeline))
+        print(f"INFO: Found {len(quarters)} unique quarters in the database")
+        
+        if len(quarters) > 0:
+            for q in quarters[:10]:  # Show first 10 quarters
+                print(f"INFO:   - {q['_id']}")
+        else:
+            print("WARNING: No quarters found in the database")
+            
+        print("SCRIPT_SUCCESS: Database format check completed")
+        return True
+    except Exception as e:
+        print(f"ERROR: Format check failed: {str(e)}")
+        print("SCRIPT_FAILURE: Database format check failed")
+        return False
+```
+
 ## References
 - Run `python -m tools.scripts.validate_database` for automated validation
+- Run `python -m tools.backup_database.py` for database backup
+- Run `python -m tools.reset_database.py` for database restore
 - See MongoDB documentation: https://docs.mongodb.com/manual/
 
 ## MongoDB Collections
@@ -88,6 +328,9 @@ if (!financial) print("Missing financial data")
 ```bash
 # Test API endpoint for stock data
 curl -X GET "http://localhost:8000/api/v1/stock/AAPL"
+
+# Check database status
+curl -X GET "http://localhost:3000/api/database/check"
 ```
 
 ## Async Operations Best Practices
@@ -98,5 +341,7 @@ curl -X GET "http://localhost:8000/api/v1/stock/AAPL"
 - Use connection timeouts to prevent hanging
 - Consider using dependency injection for database connections
 
-These guidelines help ensure data integrity and proper connection management.
-
+## Related Rules
+- For script output standardization: See [script-output-standardization-rule.mdc]
+- For error handling: See [error-handling-rule.mdc]
+- For debugging guidelines: See [debugging-guidelines.mdc]
