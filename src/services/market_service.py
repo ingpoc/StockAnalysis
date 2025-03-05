@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 class MarketService:
     def __init__(self):
-        self.db = None
+        self._cache = {}
+        self._db = None
 
     async def get_db(self):
-        if self.db is None:
-            self.db = await get_database()
-        return self.db
+        if self._db is None:
+            self._db = await get_database()
+        return self._db
 
     def _extract_latest_metrics(self, stock: Dict[str, Any], quarter: Optional[str] = None) -> Dict[str, Any]:
         """Extract and process latest metrics from a stock document"""
@@ -158,6 +159,9 @@ class MarketService:
             # Sort by net profit growth for top/worst performers
             def parse_growth(growth_str: str) -> float:
                 try:
+                    # Handle case where growth_str is already a number
+                    if isinstance(growth_str, (int, float)):
+                        return float(growth_str)
                     return float(growth_str.strip('%').replace(',', ''))
                 except (ValueError, AttributeError):
                     return 0.0
@@ -171,6 +175,9 @@ class MarketService:
             # Sort by result date for latest results
             def parse_date(date_str: str) -> datetime:
                 try:
+                    # If date_str is not a string or is empty, return minimum date
+                    if not isinstance(date_str, str) or not date_str:
+                        return datetime.min
                     return datetime.strptime(date_str, '%B %d, %Y')
                 except (ValueError, TypeError):
                     return datetime.min
@@ -193,15 +200,25 @@ class MarketService:
             raise Exception(f"Failed to fetch market data: {str(e)}")
 
     @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
-    async def get_available_quarters(self) -> List[str]:
+    async def get_available_quarters(self, force_refresh: bool = False) -> List[str]:
         """Get list of available quarters from the database"""
         try:
+            # If force_refresh is True, invalidate the cache for this function
+            if force_refresh:
+                # Get the cache key for this function
+                cache_key = f"cache_get_available_quarters_{{}}"
+                # Clear the cache for this function
+                if cache_key in self._cache:
+                    del self._cache[cache_key]
+                logger.info("Forced refresh of available quarters cache")
+            
             db = await self.get_db()
             # Aggregate to get unique quarters from the detailed_financials collection
+            # and ensure there's at least one document with data for that quarter
             pipeline = [
                 {"$unwind": "$financial_metrics"},
-                {"$group": {"_id": "$financial_metrics.quarter"}},
-                {"$match": {"_id": {"$ne": None}}},
+                {"$group": {"_id": "$financial_metrics.quarter", "count": {"$sum": 1}}},
+                {"$match": {"_id": {"$ne": None}, "count": {"$gt": 0}}},
                 {"$sort": {"_id": -1}}  # Sort in descending order (most recent first)
             ]
             
@@ -211,6 +228,7 @@ class MarketService:
                 if doc["_id"]:  # Ensure we don't include null/empty quarters
                     quarters.append(doc["_id"])
             
+            logger.info(f"Retrieved {len(quarters)} available quarters from database")
             return quarters
         except Exception as e:
             logger.error(f"Error fetching available quarters: {str(e)}")

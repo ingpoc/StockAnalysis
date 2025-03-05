@@ -22,8 +22,11 @@ def test_login():
     # Target URL for testing
     target_url = "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy"
     
+    # Set headless mode to false for testing
+    os.environ['HEADLESS'] = 'false'
+    
     logger.info("Setting up WebDriver")
-    driver = setup_webdriver(headless=False)  # Use headless=False to see the browser
+    driver = setup_webdriver()  # No longer passing headless parameter
     
     try:
         logger.info("Attempting to login to MoneyControl")
@@ -32,6 +35,13 @@ def test_login():
         if success:
             logger.info("Login successful!")
             logger.info(f"Current URL: {driver.current_url}")
+            logger.info(f"Page title: {driver.title}")
+            
+            # Take a screenshot for verification
+            screenshot_path = "login_success.png"
+            driver.save_screenshot(screenshot_path)
+            logger.info(f"Saved screenshot to {screenshot_path}")
+            
             # Wait to see the results
             time.sleep(10)
         else:

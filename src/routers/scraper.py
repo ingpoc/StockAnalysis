@@ -7,7 +7,7 @@ from fastapi import APIRouter, status, Depends, HTTPException
 
 from src.schemas.financial_data import ScrapeRequest, ScrapeResponse, CompanyFinancials
 from src.scraper.moneycontrol_scraper import scrape_moneycontrol_earnings, get_company_financials
-from src.utils.database import get_database
+from src.utils.database import get_database, refresh_database_connection
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -31,6 +31,11 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
     """
     try:
         logger.info(f"Received scraping request with result_type: {request.result_type}")
+        
+        # Refresh the database connection if requested
+        if request.refresh_connection:
+            logger.info("Refreshing database connection before scraping")
+            db = await refresh_database_connection()
         
         # Get the company financials collection
         companies_collection = db.detailed_financials
@@ -86,7 +91,7 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
             return ScrapeResponse(
                 success=False,
                 message=error_message,
-                companies_count=0,
+                companies_scraped=0,
                 data=None
             )
         
@@ -101,7 +106,7 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
             return ScrapeResponse(
                 success=False,
                 message=f"No data found or error scraping {result_name}",
-                companies_count=0,
+                companies_scraped=0,
                 data=None
             )
         
@@ -113,7 +118,7 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
         return ScrapeResponse(
             success=True,
             message=f"Successfully scraped {companies_count} companies from {result_name}",
-            companies_count=companies_count,
+            companies_scraped=companies_count,
             data=scraped_results
         )
     
@@ -123,22 +128,28 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
         return ScrapeResponse(
             success=False,
             message=error_message,
-            companies_count=0,
+            companies_scraped=0,
             data=None
         )
 
 @router.get("/companies", response_model=List[Dict[str, Any]], status_code=status.HTTP_200_OK)
-async def get_companies(db=Depends(get_database)):
+async def get_companies(refresh: bool = False, db=Depends(get_database)):
     """
     Get all companies and their financial data.
     
     Args:
+        refresh (bool): Whether to refresh the database connection before fetching data.
         db: MongoDB database dependency.
         
     Returns:
         List[Dict[str, Any]]: List of companies with their financial data.
     """
     try:
+        # Refresh the database connection if requested
+        if refresh:
+            logger.info("Refreshing database connection before fetching companies")
+            db = await refresh_database_connection()
+            
         companies_collection = db.detailed_financials
         logger.info("Retrieving all companies")
         companies = await companies_collection.find({}).to_list(1000)
@@ -158,18 +169,24 @@ async def get_companies(db=Depends(get_database)):
         )
 
 @router.get("/company/{company_name}", response_model=Dict[str, Any], status_code=status.HTTP_200_OK)
-async def get_company(company_name: str, db=Depends(get_database)):
+async def get_company(company_name: str, refresh: bool = False, db=Depends(get_database)):
     """
     Get financial data for a specific company.
     
     Args:
         company_name (str): Name of the company.
+        refresh (bool): Whether to refresh the database connection before fetching data.
         db: MongoDB database dependency.
         
     Returns:
         Dict[str, Any]: Financial data for the company.
     """
     try:
+        # Refresh the database connection if requested
+        if refresh:
+            logger.info(f"Refreshing database connection before fetching company {company_name}")
+            db = await refresh_database_connection()
+            
         companies_collection = db.detailed_financials
         logger.info(f"Retrieving financial data for {company_name}")
         company = await get_company_financials(company_name, companies_collection)
@@ -268,4 +285,54 @@ async def remove_quarter(quarter_data: dict, db=Depends(get_database)):
             "success": False,
             "message": error_message,
             "documents_updated": 0
+        }
+
+@router.get("/verify-company", status_code=status.HTTP_200_OK)
+async def verify_company_data(company_name: str, quarter: Optional[str] = None, db=Depends(get_database)):
+    """
+    Verify if a company's data exists in the database.
+    
+    Args:
+        company_name (str): Name of the company to verify.
+        quarter (str, optional): Specific quarter to check for.
+        db: MongoDB database dependency.
+        
+    Returns:
+        Dict[str, Any]: Information about the company's data in the database.
+    """
+    try:
+        companies_collection = db.detailed_financials
+        
+        # Build the query
+        query = {"company_name": company_name}
+        if quarter:
+            query["financial_metrics.quarter"] = quarter
+            
+        # Find the company
+        company_data = await companies_collection.find_one(query)
+        
+        if not company_data:
+            return {
+                "exists": False,
+                "message": f"Company '{company_name}' not found in the database" + (f" for quarter {quarter}" if quarter else ""),
+                "data": None
+            }
+            
+        # Extract quarters
+        quarters = [metric.get("quarter") for metric in company_data.get("financial_metrics", []) if metric.get("quarter")]
+        
+        return {
+            "exists": True,
+            "message": f"Company '{company_name}' found in the database",
+            "quarters": quarters,
+            "data": company_data
+        }
+        
+    except Exception as e:
+        error_message = f"Error verifying company data: {str(e)}"
+        logger.error(error_message)
+        return {
+            "exists": False,
+            "message": error_message,
+            "data": None
         } 

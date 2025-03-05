@@ -15,6 +15,22 @@ async def get_database():
         await connect_to_mongodb()
     return db.client[settings.MONGODB_DB_NAME]
 
+async def refresh_database_connection():
+    """
+    Refresh the MongoDB connection by closing the existing connection and creating a new one.
+    This is useful when the database has been updated externally and we need to ensure we're
+    using a fresh connection.
+    """
+    logger.info("Refreshing MongoDB connection...")
+    if db.client is not None:
+        db.client.close()
+        db.client = None
+        logger.info("Closed existing MongoDB connection")
+    
+    await connect_to_mongodb()
+    logger.info("MongoDB connection refreshed")
+    return db.client[settings.MONGODB_DB_NAME]
+
 async def connect_to_mongodb():
     logger.info("Connecting to MongoDB...")
     try:

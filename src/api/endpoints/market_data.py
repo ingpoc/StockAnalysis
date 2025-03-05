@@ -18,10 +18,10 @@ async def get_market_data(quarter: Optional[str] = None, force_refresh: bool = F
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/quarters")
-async def get_quarters():
+async def get_quarters(force_refresh: bool = False):
     """Get list of available quarters"""
     try:
-        quarters = await market_service.get_available_quarters()
+        quarters = await market_service.get_available_quarters(force_refresh=force_refresh)
         return {"quarters": quarters}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e)) 

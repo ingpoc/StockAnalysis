@@ -33,9 +33,12 @@ def debug_selectors():
     """
     driver = None
     try:
+        # Set headless mode to false for debugging
+        os.environ['HEADLESS'] = 'false'
+        
         # Set up the WebDriver
         logger.info("Setting up WebDriver")
-        driver = setup_webdriver(headless=False)  # Use non-headless mode for debugging
+        driver = setup_webdriver()  # No longer passing headless parameter
         logger.info("WebDriver set up successfully")
         
         # Get credentials from environment variables
@@ -47,7 +50,7 @@ def debug_selectors():
             return
         
         # URL to debug
-        url = "https://www.moneycontrol.com/stocks/marketinfo/earnings/results.php"
+        url = "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy"
         
         # Login to MoneyControl
         logger.info(f"Attempting to login to MoneyControl")
@@ -66,6 +69,15 @@ def debug_selectors():
         except Exception as e:
             logger.error(f"Error waiting for page to load: {str(e)}")
             return
+        
+        # Log current URL and title
+        logger.info(f"Current URL: {driver.current_url}")
+        logger.info(f"Page title: {driver.title}")
+        
+        # Take a screenshot for debugging
+        screenshot_path = "debug_screenshot.png"
+        driver.save_screenshot(screenshot_path)
+        logger.info(f"Saved debug screenshot to {screenshot_path}")
         
         # Scroll to load all content
         logger.info("Scrolling page to load all content")
@@ -88,7 +100,9 @@ def debug_selectors():
             'div.card',
             'div.result-card',
             'li[class*="gryCard"]',
-            'div[class*="card"]'
+            'div[class*="card"]',
+            'table.mctable1 tr',  # Try table rows as well
+            'div.FL.PR20 table tr'  # Another possible table selector
         ]
         
         for selector in selectors:
@@ -101,13 +115,20 @@ def debug_selectors():
                 logger.info(f"First element with selector '{selector}':")
                 logger.info(f"  Tag name: {first_element.name}")
                 logger.info(f"  Classes: {first_element.get('class', [])}")
+                logger.info(f"  HTML: {first_element}")
                 
                 # Try to find company name
                 company_name_element = first_element.select_one('h3 a')
                 if company_name_element:
                     logger.info(f"  Company name: {company_name_element.text.strip()}")
                 else:
-                    logger.info("  Company name element not found")
+                    logger.info("  Company name element not found with 'h3 a'")
+                    # Try other selectors for company name
+                    for name_selector in ['a', 'h2 a', 'h4 a', 'strong', 'b']:
+                        name_element = first_element.select_one(name_selector)
+                        if name_element:
+                            logger.info(f"  Company name found with '{name_selector}': {name_element.text.strip()}")
+                            break
                 
                 # Try to find financial data
                 financial_data_elements = first_element.select('tr')
@@ -115,6 +136,12 @@ def debug_selectors():
                 
                 for i, row in enumerate(financial_data_elements[:3]):  # Show first 3 rows
                     logger.info(f"  Row {i+1}: {row.text.strip()}")
+                    
+                # Try to find table cells directly
+                cells = first_element.select('td')
+                logger.info(f"  Found {len(cells)} table cells")
+                for i, cell in enumerate(cells[:5]):  # Show first 5 cells
+                    logger.info(f"  Cell {i+1}: {cell.text.strip()}")
         
         # Wait for user to review the page
         logger.info("Debug complete. Waiting 30 seconds before closing...")
@@ -122,6 +149,8 @@ def debug_selectors():
         
     except Exception as e:
         logger.error(f"Error during debugging: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
     finally:
         if driver:
             driver.quit()
