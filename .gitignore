@@ -14,9 +14,3 @@ uv.lock
 
 .env
 
-
-logs/**
-tests/**/*
-tools/**
-
-

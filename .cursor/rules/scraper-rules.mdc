@@ -1,0 +1,84 @@
+---
+description: These rules apply specifically to the web scraping components of the Stock Analysis project.
+globs: src/scraper/**/*.py
+alwaysApply: false
+---
+# Stock Analysis Scraper Rules
+
+## Description
+These rules apply specifically to the web scraping components of the Stock Analysis project.
+
+## Files
+src/scraper/**/*.py
+
+## Rules
+
+You are an expert in web scraping with Python, specializing in financial data extraction. You understand the challenges of scraping dynamic websites, handling authentication, and processing financial data.
+
+@file:project-guidelines.md
+
+### Scraper Design Principles
+
+1. **Resilience**: Design scrapers to be resilient to website changes. Use flexible selectors and implement fallback mechanisms.
+
+2. **Rate Limiting**: Implement proper rate limiting to avoid overloading target websites and getting blocked. Use random delays between requests.
+
+3. **Session Management**: Handle cookies, authentication, and session management properly. Implement proper login flows and session renewal.
+
+4. **Error Handling**: Implement comprehensive error handling with specific exception types for different failure scenarios (network errors, authentication failures, parsing errors, etc.).
+
+5. **Retry Mechanism**: Implement exponential backoff retry mechanisms for transient failures.
+
+6. **Proxy Support**: Design scrapers to support proxy rotation if needed to avoid IP bans.
+
+7. **Data Validation**: Validate and clean scraped data before storing. Handle missing or malformed data gracefully.
+
+8. **Logging**: Implement detailed logging for debugging and monitoring. Log request/response details for troubleshooting.
+
+9. **Caching**: Implement caching to reduce duplicate requests and improve performance.
+
+10. **Modularity**: Design scrapers to be modular and reusable. Separate the concerns of request handling, parsing, and data processing.
+
+### Financial Data Extraction
+
+1. **Data Normalization**: Normalize financial data to consistent formats and units.
+
+2. **Currency Handling**: Handle different currencies and convert to a standard currency if needed.
+
+3. **Date Parsing**: Parse and normalize dates from various formats.
+
+4. **Numerical Data**: Handle different number formats (e.g., thousands separators, decimal points) and convert to appropriate Python types.
+
+5. **Financial Metrics**: Extract and calculate common financial metrics and ratios.
+
+### Performance Optimization
+
+1. **Asynchronous Requests**: Use asynchronous requests to improve performance when scraping multiple pages.
+
+2. **Parallel Processing**: Implement parallel processing for CPU-bound tasks like parsing.
+
+3. **Resource Management**: Properly manage resources like connections and file handles.
+
+4. **Memory Efficiency**: Consider memory usage when processing large datasets.
+
+### Ethical Scraping
+
+1. **Terms of Service**: Respect website terms of service and robots.txt.
+
+2. **User-Agent**: Use appropriate and consistent user-agent strings.
+
+3. **Bandwidth Consideration**: Minimize bandwidth usage by only requesting necessary resources.
+
+4. **Data Privacy**: Handle any personal or sensitive data according to relevant regulations.
+
+### Maintenance and Evolution
+
+1. **Monitoring**: Implement monitoring to detect when scrapers break due to website changes.
+
+2. **Versioning**: Version scraper implementations to track changes and allow for rollbacks.
+
+3. **Documentation**: Document the structure of target websites and the logic of the scrapers.
+
+4. **Testing**: Implement tests to verify scraper functionality and data quality.
+
+These rules should be applied to all scraper components in the project. They are designed to ensure reliable, efficient, and ethical web scraping while allowing for rapid development and evolution of the scrapers. 

@@ -1,0 +1,105 @@
+---
+description: These rules apply specifically to the API components of the Stock Analysis project.
+globs: src/api/**/*.py,src/routers/**/*.py
+alwaysApply: false
+---
+# Stock Analysis API Rules
+
+## Description
+These rules apply specifically to the API components of the Stock Analysis project.
+
+## Files
+src/api/**/*.py
+src/routers/**/*.py
+
+## Rules
+
+You are an expert in FastAPI development, specializing in building robust and scalable APIs. You understand RESTful API design principles, authentication, and performance optimization.
+
+@file:project-guidelines.md
+
+### API Design Principles
+
+1. **RESTful Design**: Follow RESTful API design principles. Use appropriate HTTP methods (GET, POST, PUT, DELETE) and status codes.
+
+2. **Resource-Oriented**: Design APIs around resources rather than actions. Use nouns for resource names and plural forms for collections.
+
+3. **Versioning**: Implement API versioning to allow for backward compatibility when making breaking changes.
+
+4. **Consistency**: Maintain consistent naming conventions, response formats, and error handling across all endpoints.
+
+5. **Pagination**: Implement pagination for endpoints that return collections. Use limit and offset or cursor-based pagination.
+
+6. **Filtering and Sorting**: Support filtering and sorting for collection endpoints. Use query parameters for filtering and sorting options.
+
+7. **HATEOAS**: Consider implementing HATEOAS (Hypertext as the Engine of Application State) for better API discoverability.
+
+8. **Documentation**: Document all endpoints with clear descriptions, request/response examples, and error scenarios.
+
+### Request/Response Handling
+
+1. **Validation**: Use Pydantic models for request validation. Define comprehensive validation rules for all input fields.
+
+2. **Serialization**: Use Pydantic models for response serialization. Define clear response schemas for all endpoints.
+
+3. **Error Handling**: Implement proper error handling with appropriate HTTP status codes and error messages. Use consistent error response format.
+
+4. **Content Negotiation**: Support multiple content types (JSON, XML, etc.) if needed.
+
+5. **Compression**: Implement response compression for large responses.
+
+6. **Caching**: Implement proper caching headers for responses that can be cached.
+
+### Authentication and Authorization
+
+1. **Authentication**: Implement proper authentication mechanisms (JWT, OAuth, etc.). Use secure token storage and transmission.
+
+2. **Authorization**: Implement proper authorization checks for all endpoints. Use role-based or permission-based access control.
+
+3. **Rate Limiting**: Implement rate limiting to prevent abuse. Use different rate limits for authenticated and unauthenticated requests.
+
+4. **CORS**: Configure CORS properly to allow access from authorized origins.
+
+5. **Security Headers**: Implement security headers (Content-Security-Policy, X-XSS-Protection, etc.).
+
+### Performance Optimization
+
+1. **Asynchronous Handlers**: Use asynchronous request handlers for I/O-bound operations.
+
+2. **Database Optimization**: Optimize database queries for API endpoints. Use projection to limit returned fields.
+
+3. **Caching**: Implement caching for frequently accessed data. Use in-memory caching or distributed caching as appropriate.
+
+4. **Connection Pooling**: Use connection pooling for database connections and HTTP clients.
+
+5. **Background Tasks**: Use background tasks for long-running operations.
+
+### Testing and Monitoring
+
+1. **Unit Testing**: Write unit tests for all API endpoints. Test happy paths and error scenarios.
+
+2. **Integration Testing**: Implement integration tests for API endpoints with database interactions.
+
+3. **Load Testing**: Consider load testing for critical endpoints.
+
+4. **Monitoring**: Implement proper logging and monitoring for API endpoints. Log request/response details for troubleshooting.
+
+5. **Health Checks**: Implement health check endpoints for monitoring.
+
+### Dependency Injection
+
+1. **Service Injection**: Use dependency injection for services and repositories.
+
+2. **Configuration Injection**: Inject configuration values rather than accessing them directly.
+
+3. **Testing Support**: Design dependencies to be easily mockable for testing.
+
+### API Evolution
+
+1. **Backward Compatibility**: Maintain backward compatibility when making changes to existing endpoints.
+
+2. **Deprecation**: Use proper deprecation notices and headers when deprecating endpoints.
+
+3. **Feature Flags**: Consider using feature flags for new API features.
+
+These rules should be applied to all API components in the project. They are designed to ensure robust, scalable, and maintainable API development while allowing for rapid development and evolution of the API. 
