@@ -2,8 +2,13 @@
 Test script for MoneyControl login functionality.
 """
 import os
+import sys
 import time
 from dotenv import load_dotenv
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from src.scraper.scraper_login import setup_webdriver, login_to_moneycontrol
 from src.utils.logger import logger
 
@@ -38,7 +43,7 @@ def test_login():
             logger.info(f"Page title: {driver.title}")
             
             # Take a screenshot for verification
-            screenshot_path = "login_success.png"
+            screenshot_path = os.path.join(os.path.dirname(__file__), "login_success.png")
             driver.save_screenshot(screenshot_path)
             logger.info(f"Saved screenshot to {screenshot_path}")
             

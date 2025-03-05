@@ -102,8 +102,13 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         
         logger.info(f"Successfully scraped {len(results)} companies' financial data.")
         
-        # Verify data was saved to database
+        # Now save all collected data to the database
         if db_collection is not None and results:
+            logger.info(f"Saving {len(results)} companies to database")
+            for company_data in results:
+                await save_to_database(db_collection, company_data)
+            
+            # Verify data was saved to database
             saved_count = 0
             for result in results:
                 company_name = result.get("company_name")
@@ -1040,10 +1045,6 @@ async def scrape_earnings_list(driver, url, db_collection=None):
                         
                         # Add to results
                         results.append(company_data)
-                        
-                        # Save to database if provided
-                        if db_collection is not None:
-                            await save_to_database(db_collection, company_data)
                             
                     except Exception as e:
                         logger.error(f"Error extracting data from element {i+1}: {str(e)}")
@@ -1061,6 +1062,28 @@ async def scrape_earnings_list(driver, url, db_collection=None):
                 f.write(page_source)
             logger.info("Saved failed scrape page source to failed_scrape_page.html")
         
+        # Now that we have collected all data, save it to the database
+        if db_collection is not None and results:
+            logger.info(f"Saving {len(results)} companies to database")
+            for company_data in results:
+                await save_to_database(db_collection, company_data)
+            
+            # Verify data was saved to database
+            saved_count = 0
+            for result in results:
+                company_name = result.get("company_name")
+                quarter = result.get("financial_metrics", {}).get("quarter")
+                
+                if company_name and quarter:
+                    # Check if the data exists in the database
+                    exists = await check_company_quarter_exists(db_collection, company_name, quarter)
+                    if exists:
+                        saved_count += 1
+                    else:
+                        logger.warning(f"Data for {company_name} ({quarter}) may not have been saved to the database.")
+            
+            logger.info(f"Verified {saved_count} out of {len(results)} companies were saved to the database.")
+        
         logger.info(f"Scraped {len(results)} companies from earnings list")
         return results
     
@@ -1068,7 +1091,6 @@ async def scrape_earnings_list(driver, url, db_collection=None):
         logger.error(f"Error scraping earnings list: {str(e)}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
-        return []
 
 async def scroll_page(driver) -> None:
     """

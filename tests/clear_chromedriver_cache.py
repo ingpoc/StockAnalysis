@@ -8,7 +8,7 @@ import sys
 import logging
 
 # Add the project root to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Import the clear_chromedriver_cache function
 from src.scraper.scraper_login import clear_chromedriver_cache

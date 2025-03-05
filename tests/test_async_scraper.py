@@ -23,12 +23,13 @@ from src.scraper.moneycontrol_scraper import (
 )
 
 # Configure logging
+log_file = os.path.join(os.path.dirname(__file__), "async_scraper_test.log")
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("async_scraper_test.log")
+        logging.FileHandler(log_file)
     ]
 )
 

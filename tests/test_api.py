@@ -1,12 +1,16 @@
 import requests
 import json
 import os
+import sys
 import pandas as pd
 from io import StringIO
 from datetime import datetime
 
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 # Base URL for all API requests
-BASE_URL = "http://localhost:8000/api/v1"
+BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000/api/v1")
 
 # Note: These tests use symbols that are known to exist in the database.
 # Using non-existent symbols will result in 404 or 500 errors.
@@ -28,6 +32,47 @@ def test_get_holdings():
             print(f"Success! Retrieved {len(holdings)} holdings")
             if holdings:
                 print(f"First holding: {json.dumps(holdings[0], indent=2)}")
+        else:
+            print(f"Error: {response.text}")
+    except Exception as e:
+        print(f"Exception: {str(e)}")
+
+def test_get_market_data():
+    """Test the GET /market-data endpoint"""
+    print("\n=== Testing GET /market-data ===")
+    
+    try:
+        response = requests.get(f"{BASE_URL}/market-data")
+        
+        print(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            market_data = response.json()
+            print(f"Success! Retrieved market data with {len(market_data)} items")
+            if market_data:
+                print(f"First item: {json.dumps(market_data[0], indent=2)}")
+        else:
+            print(f"Error: {response.text}")
+    except Exception as e:
+        print(f"Exception: {str(e)}")
+
+def test_get_stock_details():
+    """Test the GET /stock/{symbol} endpoint"""
+    print("\n=== Testing GET /stock/{symbol} ===")
+    
+    # Use a symbol that's likely to be in the database
+    test_symbol = "JUBLPHARMA"
+    
+    try:
+        response = requests.get(f"{BASE_URL}/stock/{test_symbol}")
+        
+        print(f"Status Code: {response.status_code}")
+        
+        if response.status_code == 200:
+            stock_data = response.json()
+            print(f"Success! Retrieved stock details for {stock_data.get('symbol', 'unknown')}")
+            print(f"Company name: {stock_data.get('company_name', 'unknown')}")
+            print(f"Financial metrics: {len(stock_data.get('financial_metrics', []))} metrics found")
         else:
             print(f"Error: {response.text}")
     except Exception as e:
@@ -167,26 +212,6 @@ GOOGL,Alphabet Inc.,5,155.75,2025-03-01T00:00:00,Imported via CSV test
 
 # Market Data API Tests
 
-def test_get_market_data():
-    """Test the GET /market-data endpoint"""
-    print("\n=== Testing GET /market-data ===")
-    
-    try:
-        response = requests.get(f"{BASE_URL}/market-data")
-        
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            print("Success! Received market data overview")
-            print(f"Quarter: {data.get('quarter')}")
-            print(f"Last Updated: {data.get('last_updated')}")
-            print(f"Top Performers Count: {len(data.get('top_performers', []))}")
-        else:
-            print(f"Error: {response.text}")
-    except Exception as e:
-        print(f"Exception: {str(e)}")
-
 def test_get_quarters():
     """Test the GET /quarters endpoint"""
     print("\n=== Testing GET /quarters ===")
@@ -204,31 +229,6 @@ def test_get_quarters():
                 print(f"Available quarters: {', '.join(quarters[:5])}")
                 if len(quarters) > 5:
                     print(f"...and {len(quarters) - 5} more")
-        else:
-            print(f"Error: {response.text}")
-    except Exception as e:
-        print(f"Exception: {str(e)}")
-
-# Stock Data API Tests
-
-def test_get_stock_details():
-    """Test the GET /stock/{symbol} endpoint"""
-    # Use a symbol that exists in the database to avoid 404/500 errors
-    symbol = "JUBLPHARMA"  # Valid symbol in the database
-    print(f"\n=== Testing GET /stock/{symbol} ===")
-    
-    try:
-        response = requests.get(f"{BASE_URL}/stock/{symbol}")
-        
-        print(f"Status Code: {response.status_code}")
-        
-        if response.status_code == 200:
-            data = response.json()
-            print(f"Success! Retrieved details for {symbol}")
-            stock_data = data.get('stock', {})
-            print(f"Company Name: {stock_data.get('company_name')}")
-            print(f"Symbol: {stock_data.get('symbol')}")
-            print(f"Last Updated: {stock_data.get('timestamp')}")
         else:
             print(f"Error: {response.text}")
     except Exception as e:

@@ -7,7 +7,7 @@ to ensure data integrity and consistency. It's designed to be run directly
 from the command line without requiring test files.
 
 Usage:
-    python -m tools.scripts.validate_database [--collection COLLECTION]
+    python -m tests.validate_database [--collection COLLECTION]
 
 Options:
     --collection    Specify a collection to validate (default: all collections)
@@ -16,9 +16,14 @@ Options:
 import asyncio
 import argparse
 import logging
+import os
+import sys
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
+
+# Add the project root to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Configure logging
 logging.basicConfig(
@@ -28,7 +33,7 @@ logging.basicConfig(
 logger = logging.getLogger("db-validator")
 
 # Database configuration
-MONGODB_URI = "mongodb://localhost:27017"
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
 DB_NAME = "stock_data"
 
 class DatabaseValidator:
