@@ -87,14 +87,18 @@ class FirstCardOnlyScraper:
     """
     def __init__(self):
         self.original_scrape_multiple_stocks = None
+        self.original_scrape_moneycontrol_earnings = None
         
     def patch_scraper(self):
         """Patch the scraper to only process the first card"""
-        # Import the original function
-        from src.scraper.scrapedata import scrape_multiple_stocks as original_func
-        self.original_scrape_multiple_stocks = original_func
+        # Import the original functions
+        from src.scraper.scrapedata import scrape_multiple_stocks as original_multi_func
+        from src.scraper.scrapedata import scrape_moneycontrol_earnings as original_earnings_func
         
-        # Define the patched function
+        self.original_scrape_multiple_stocks = original_multi_func
+        self.original_scrape_moneycontrol_earnings = original_earnings_func
+        
+        # Define the patched function for scrape_multiple_stocks
         async def patched_scrape_multiple_stocks(driver, url, db_collection=None):
             logger.info("Using patched scraper that only processes the first card")
             try:
@@ -111,16 +115,80 @@ class FirstCardOnlyScraper:
                 logger.error(f"Error in patched scrape_multiple_stocks: {str(e)}")
                 return []
         
-        # Apply the patch
+        # Define the patched function for scrape_moneycontrol_earnings
+        async def patched_scrape_moneycontrol_earnings(url, db_collection=None):
+            logger.info("Using patched scraper that only processes the first card")
+            try:
+                # Call the original function but limit processing to first card
+                driver = setup_webdriver()
+                
+                try:
+                    # Login to MoneyControl
+                    login_success = login_to_moneycontrol(driver, target_url=url)
+                    if not login_success:
+                        logger.error("Failed to login to MoneyControl")
+                        return []
+                    
+                    logger.info(f"Opening page: {url}")
+                    driver.get(url)
+                    
+                    # Wait for result cards to load
+                    WebDriverWait(driver, 30).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, '#latestRes > div > ul > li:nth-child(1)'))
+                    )
+                    logger.info("Page opened successfully")
+                    
+                    # Parse the page content
+                    page_source = driver.page_source
+                    soup = BeautifulSoup(page_source, 'html.parser')
+                    
+                    # Get only the first result card
+                    result_cards = soup.select('#latestRes > div > ul > li')
+                    
+                    if not result_cards:
+                        logger.error("No result cards found")
+                        return []
+                    
+                    logger.info(f"Found {len(result_cards)} result cards, processing only the first one")
+                    
+                    # Process only the first card
+                    first_card = result_cards[0]
+                    company_data = await process_result_card(first_card, driver, db_collection)
+                    
+                    if company_data:
+                        return [company_data]
+                    else:
+                        return []
+                        
+                except Exception as e:
+                    logger.error(f"Error in patched scrape_moneycontrol_earnings: {str(e)}")
+                    return []
+                finally:
+                    driver.quit()
+            except Exception as e:
+                logger.error(f"Error in patched scrape_moneycontrol_earnings: {str(e)}")
+                return []
+        
+        # Apply the patches
         import src.scraper.scrapedata
         src.scraper.scrapedata.scrape_multiple_stocks = patched_scrape_multiple_stocks
+        src.scraper.scrapedata.scrape_moneycontrol_earnings = patched_scrape_moneycontrol_earnings
+        
+        # Import necessary components for the patched function
+        from src.scraper.browser_setup import setup_webdriver, login_to_moneycontrol
+        from selenium.webdriver.common.by import By
+        from selenium.webdriver.support.ui import WebDriverWait
+        from selenium.webdriver.support import expected_conditions as EC
+        from bs4 import BeautifulSoup
+        from src.scraper.scrapedata import process_result_card
         
     def restore_scraper(self):
-        """Restore the original scraper function"""
-        if self.original_scrape_multiple_stocks:
+        """Restore the original scraper functions"""
+        if self.original_scrape_multiple_stocks and self.original_scrape_moneycontrol_earnings:
             import src.scraper.scrapedata
             src.scraper.scrapedata.scrape_multiple_stocks = self.original_scrape_multiple_stocks
-            logger.info("Restored original scraper function")
+            src.scraper.scrapedata.scrape_moneycontrol_earnings = self.original_scrape_moneycontrol_earnings
+            logger.info("Restored original scraper functions")
 
 async def test_scrape_single_card():
     """

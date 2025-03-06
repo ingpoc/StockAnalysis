@@ -25,7 +25,12 @@ from src.scraper.browser_setup import setup_webdriver, login_to_moneycontrol
 from src.scraper.extract_metrics import (
     extract_financial_data, 
     extract_company_info, 
-    process_financial_data
+    process_financial_data,
+    scrape_financial_metrics
+)
+from src.scraper.db_operations import (
+    store_financial_data,
+    update_or_insert_financial_data
 )
 
 # Import the centralized logger
@@ -49,61 +54,181 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
         
     Returns:
-        List[Dict[str, Any]]: List of dictionaries containing company financial data.
+        List[Dict[str, Any]]: List of financial data dictionaries.
     """
-    driver = None
     results = []
+    driver = setup_webdriver()
     
     try:
-        logger.info(f"Starting scraping process for URL: {url}")
+        # Login to MoneyControl
+        login_success = login_to_moneycontrol(driver, target_url=url)
+        if not login_success:
+            logger.error("Failed to login to MoneyControl")
+            return results
         
-        # Get headless mode setting from environment
-        headless_value = os.getenv('HEADLESS', 'true').lower()
-        headless_mode = headless_value != "false"
+        logger.info(f"Opening page: {url}")
+        driver.get(url)
         
-        # Set up WebDriver
-        driver = setup_webdriver(headless=headless_mode)
-        if not driver:
-            logger.error("Failed to set up WebDriver")
-            return []
+        # Wait for result cards to load
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, '#latestRes > div > ul > li:nth-child(1)'))
+        )
+        logger.info("Page opened successfully")
         
-        # Get credentials from environment variables
-        username = os.getenv('MONEYCONTROL_USERNAME')
-        password = os.getenv('MONEYCONTROL_PASSWORD')
+        # Scroll to load all results
+        scroll_page(driver)
         
-        if username and password:
-            # Login to MoneyControl
-            login_success = login_to_moneycontrol(driver, username, password, target_url=url)
-            if not login_success:
-                logger.error("Failed to login to MoneyControl. Proceeding without login.")
-        else:
-            logger.warning("MoneyControl credentials not found in environment variables. Proceeding without login.")
-            # Navigate to the URL directly
-            driver.get(url)
-            time.sleep(3)  # Wait for page to load
+        # Parse the page content
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
         
-        # Determine if it's a direct stock URL or an earnings list
-        if "stockpricequote" in url or "/stock/" in url:
-            logger.info("Detected direct stock URL. Scraping single stock.")
-            stock_data = await scrape_single_stock(driver, url, db_collection)
-            if stock_data:
-                results.append(stock_data)
-                logger.info(f"Successfully scraped data for {stock_data.get('company_name', 'unknown company')}")
-        else:
-            logger.info("Detected earnings list URL. Scraping multiple stocks.")
-            stocks_data = await scrape_multiple_stocks(driver, url, db_collection)
-            results.extend(stocks_data)
-            logger.info(f"Successfully scraped data for {len(stocks_data)} companies")
+        # Updated selector based on debug results
+        result_cards = soup.select('#latestRes > div > ul > li')
         
-        return results
+        logger.info(f"Found {len(result_cards)} result cards to process")
+        
+        # Process each result card
+        for card in result_cards:
+            try:
+                company_data = await process_result_card(card, driver, db_collection)
+                if company_data:
+                    results.append(company_data)
+            except Exception as e:
+                company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
+                logger.error(f"Error processing card for {company_name}: {str(e)}")
+    
+    except TimeoutException:
+        logger.error("Timeout waiting for page to load")
+    except WebDriverException as e:
+        logger.error(f"WebDriver error: {str(e)}")
     except Exception as e:
-        logger.error(f"Error in scrape_moneycontrol_earnings: {str(e)}")
-        return []
+        logger.error(f"Unexpected error during scraping: {str(e)}")
     finally:
-        # Clean up resources
-        if driver:
-            logger.info("Closing WebDriver")
-            driver.quit()
+        driver.quit()
+        
+    return results
+
+def scroll_page(driver):
+    """
+    Scroll the page to load all content.
+    
+    Args:
+        driver (webdriver.Chrome): WebDriver instance.
+    """
+    last_height = driver.execute_script("return document.body.scrollHeight")
+    
+    while True:
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+        time.sleep(2)
+        
+        new_height = driver.execute_script("return document.body.scrollHeight")
+        if new_height == last_height:
+            break
+            
+        last_height = new_height
+
+async def process_result_card(card, driver, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
+    """
+    Process a result card and extract financial data.
+    
+    Args:
+        card: BeautifulSoup element representing a result card.
+        driver: WebDriver instance for navigating to company pages.
+        db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
+        
+    Returns:
+        Dict[str, Any]: Financial data or None if processing failed.
+    """
+    try:
+        # Extract company name and link
+        company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else None
+        if not company_name:
+            logger.warning("Skipping card due to missing company name.")
+            return None
+            
+        stock_link = card.select_one('h3 a')['href'] if card.select_one('h3 a') else None
+        if not stock_link:
+            logger.warning(f"Skipping {company_name} due to missing stock link.")
+            return None
+            
+        logger.info(f"Processing stock: {company_name}")
+        
+        # Extract basic financial data from the card
+        financial_data = extract_financial_data(card)
+        
+        # Check if we already have data for this company and quarter
+        if db_collection is not None:
+            # Use a more specific query that includes both company name and quarter
+            quarter = financial_data.get('quarter', '')
+            if quarter:
+                existing_entry = await db_collection.find_one({
+                    "company_name": company_name,
+                    "financial_metrics": {
+                        "$elemMatch": {
+                            "quarter": quarter
+                        }
+                    }
+                })
+                
+                if existing_entry:
+                    logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
+                    return None
+        
+        # Get additional metrics from the company page
+        metrics_data, symbol = scrape_financial_metrics(driver, stock_link)
+        
+        # Open the stock page to get company info
+        driver.execute_script(f"window.open('{stock_link}', '_blank');")
+        driver.switch_to.window(driver.window_handles[-1])
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
+        
+        # Parse the page source
+        detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
+        company_info = extract_company_info(detailed_soup)
+        
+        # Close the tab and switch back to the main window
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+        if metrics_data:
+            financial_data.update(metrics_data)
+            
+        # Process the data for storing in the database
+        processed_data = {
+            "company_name": company_name,
+            "symbol": symbol or "NA",
+            "financial_metrics": [financial_data],
+            "company_info": company_info,
+            "timestamp": datetime.utcnow()
+        }
+        
+        # Store the data in the database if a collection is provided
+        if db_collection is not None:
+            # Check for duplicates before storing
+            quarter = financial_data.get('quarter', '')
+            if quarter:
+                existing_entry = await db_collection.find_one({
+                    "company_name": company_name,
+                    "financial_metrics": {
+                        "$elemMatch": {
+                            "quarter": quarter
+                        }
+                    }
+                })
+                
+                if existing_entry:
+                    logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
+                    return None
+            
+            # Store if no duplicate found
+            await update_or_insert_financial_data(processed_data, db_collection)
+            
+        return processed_data
+        
+    except Exception as e:
+        company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
+        logger.error(f"Error processing {company_name}: {str(e)}")
+        return None
 
 async def scrape_single_stock(driver: webdriver.Chrome, url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
     """
@@ -272,7 +397,24 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                                     
                                     # Store in database if provided
                                     if db_collection is not None:
-                                        await store_financial_data(company_data, db_collection)
+                                        # Check for duplicates before storing
+                                        quarter = financial_data.get('quarter', '')
+                                        if quarter:
+                                            existing_entry = await db_collection.find_one({
+                                                "company_name": company_name,
+                                                "financial_metrics": {
+                                                    "$elemMatch": {
+                                                        "quarter": quarter
+                                                    }
+                                                }
+                                            })
+                                            
+                                            if existing_entry:
+                                                logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
+                                                continue
+                                        
+                                        # Store if no duplicate found
+                                        await update_or_insert_financial_data(company_data, db_collection)
                                     
                                     results.append(company_data)
                                     
@@ -318,7 +460,24 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                     
                     # Store in database if provided
                     if db_collection is not None:
-                        await store_financial_data(company_data, db_collection)
+                        # Check for duplicates before storing
+                        quarter = financial_data.get('quarter', '')
+                        if quarter:
+                            existing_entry = await db_collection.find_one({
+                                "company_name": company_name,
+                                "financial_metrics": {
+                                    "$elemMatch": {
+                                        "quarter": quarter
+                                    }
+                                }
+                            })
+                            
+                            if existing_entry:
+                                logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
+                                continue
+                        
+                        # Store if no duplicate found
+                        await update_or_insert_financial_data(company_data, db_collection)
                     
                     results.append(company_data)
                     
@@ -351,9 +510,34 @@ async def store_financial_data(data: Dict[str, Any], collection: AsyncIOMotorCol
         bool: True if data was stored successfully, False otherwise.
     """
     try:
-        logger.info(f"Storing financial data for {data.get('company_name', 'unknown')} in database")
+        company_name = data.get('company_name', 'unknown')
+        logger.info(f"Preparing to store financial data for {company_name} in database")
+        
+        # Check if we have any financial metrics to work with
+        financial_metrics = data.get('financial_metrics', [])
+        if not financial_metrics:
+            logger.warning(f"No financial metrics found for {company_name}, storing anyway")
+        else:
+            # Check if this company+quarter combination already exists
+            for metric in financial_metrics:
+                quarter = metric.get('quarter')
+                if quarter:
+                    existing_entry = await collection.find_one({
+                        "company_name": company_name,
+                        "financial_metrics": {
+                            "$elemMatch": {
+                                "quarter": quarter
+                            }
+                        }
+                    })
+                    
+                    if existing_entry:
+                        logger.info(f"Data for {company_name} in quarter {quarter} already exists. Skipping.")
+                        return False
+        
+        # If we get here, it's safe to store the data
         await collection.insert_one(data)
-        logger.info(f"Financial data for {data.get('company_name', 'unknown')} stored successfully")
+        logger.info(f"Financial data for {company_name} stored successfully")
         return True
     except Exception as e:
         logger.error(f"Error storing financial data: {str(e)}")
@@ -534,34 +718,239 @@ def extract_symbol_from_card(card) -> Optional[str]:
 
 async def scrape_by_result_type(result_type: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
     """
-    Scrape financial data by result type.
+    Scrape earnings data by result type.
     
     Args:
-        result_type (str): Type of results to scrape (LR, BP, WP, PT, NT).
+        result_type (str): Result type (LR, BP, WP, PT, NT).
         db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
         
     Returns:
-        List[Dict[str, Any]]: List of scraped financial data.
+        List[Dict[str, Any]]: List of financial data dictionaries.
     """
-    if result_type not in URL_TYPES:
-        logger.error(f"Invalid result type: {result_type}")
+    url_types = {
+        "LR": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy",
+        "BP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/best-performers/",
+        "WP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/worst-performers/",
+        "PT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/positive-trend/",
+        "NT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/negative-trend/"
+    }
+    
+    if result_type not in url_types:
+        logger.error(f"Invalid result type: {result_type}. Valid types are: {', '.join(url_types.keys())}")
         return []
     
-    url = URL_TYPES[result_type]
-    logger.info(f"Scraping {result_type} results from URL: {url}")
-    
+    url = url_types[result_type]
     return await scrape_moneycontrol_earnings(url, db_collection)
 
-async def scrape_custom_url(url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
+async def scrape_estimates_vs_actuals(url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
     """
-    Scrape financial data from a custom URL.
+    Scrape estimates vs actuals data from MoneyControl.
     
     Args:
-        url (str): Custom URL to scrape.
+        url (str): URL of the MoneyControl estimates vs actuals page.
         db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
         
     Returns:
-        List[Dict[str, Any]]: List of scraped financial data.
+        List[Dict[str, Any]]: List of financial data dictionaries.
     """
-    logger.info(f"Scraping custom URL: {url}")
-    return await scrape_moneycontrol_earnings(url, db_collection) 
+    results = []
+    driver = setup_webdriver()
+    last_card_count = 0
+    
+    try:
+        # Login to MoneyControl
+        login_success = login_to_moneycontrol(driver, target_url=url)
+        if not login_success:
+            logger.error("Failed to login to MoneyControl")
+            return results
+        
+        logger.info(f"Opening page: {url}")
+        driver.get(url)
+        
+        # Wait for estimate cards to load - updated selector
+        WebDriverWait(driver, 20).until(
+            EC.visibility_of_element_located((By.CSS_SELECTOR, '#estVsAct > div > ul > li:nth-child(1)'))
+        )
+        logger.info("Page opened successfully")
+        
+        no_new_content_count = 0
+        max_no_new_content = 3
+        
+        while True:
+            # Find all estimate cards - updated selector
+            estimate_cards = driver.find_elements(By.CSS_SELECTOR, '#estVsAct > div > ul > li')
+            
+            # Check if we have new cards
+            if len(estimate_cards) == last_card_count:
+                no_new_content_count += 1
+                if no_new_content_count >= max_no_new_content:
+                    logger.info(f"No new content after {max_no_new_content} scrolls. Ending scrape.")
+                    break
+            else:
+                no_new_content_count = 0
+            
+            # Process new cards
+            for card in estimate_cards[last_card_count:]:
+                try:
+                    data = await process_estimate_card(card, db_collection)
+                    if data:
+                        results.append(data)
+                except Exception as e:
+                    logger.error(f"Error processing estimate card: {str(e)}")
+            
+            last_card_count = len(estimate_cards)
+            
+            # Scroll to the last card to load more
+            if estimate_cards:
+                driver.execute_script("arguments[0].scrollIntoView();", estimate_cards[-1])
+                time.sleep(1)
+                
+            logger.info(f"Processed {last_card_count} estimate cards so far.")
+    
+    except Exception as e:
+        logger.error(f"Error during estimates scraping: {str(e)}")
+    finally:
+        logger.info(f"Processed a total of {last_card_count} estimate cards.")
+        driver.quit()
+        
+    return results
+
+async def process_estimate_card(card, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
+    """
+    Process an estimate card and extract data.
+    
+    Args:
+        card: Selenium WebElement representing an estimate card.
+        db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
+        
+    Returns:
+        Dict[str, Any]: Estimate data or None if processing failed.
+    """
+    try:
+        # Updated selectors
+        company_name = card.find_element(By.CSS_SELECTOR, 'h3 a').text.strip()
+        quarter = card.find_element(By.CSS_SELECTOR, 'tr th:nth-child(1)').text.strip()
+        # Updated class name based on debug results
+        estimates_line = card.find_element(By.CSS_SELECTOR, 'div[class*="EastimateCard_botTxtCen"]').text.strip()
+        cmp = card.find_element(By.CSS_SELECTOR, 'p[class*="EastimateCard_priceTxt"]').text.strip()
+        result_date = card.find_element(By.CSS_SELECTOR, 'p[class*="EastimateCard_gryTxtOne"]').text.strip()
+        
+        logger.info(f"Processing: {company_name}, Quarter: {quarter}, Estimates: {estimates_line}")
+        
+        # Create default financial data with estimates
+        default_financial_data = {
+            "quarter": quarter,
+            "estimates": estimates_line,
+            "cmp": cmp,
+            "revenue": "0",
+            "gross_profit": "0",
+            "net_profit": "0",
+            "net_profit_growth": "0%",
+            "gross_profit_growth": "0%",
+            "revenue_growth": "0%",
+            "result_date": result_date,
+            "report_type": "NA",
+            "market_cap": "NA",
+            "face_value": "NA",
+            "book_value": "NA",
+            "dividend_yield": "NA",
+            "ttm_eps": "NA",
+            "ttm_pe": "NA",
+            "pb_ratio": "NA",
+            "sector_pe": "NA",
+            "piotroski_score": "NA",
+            "revenue_growth_3yr_cagr": "NA",
+            "net_profit_growth_3yr_cagr": "NA",
+            "operating_profit_growth_3yr_cagr": "NA",
+            "strengths": "NA",
+            "weaknesses": "NA",
+            "technicals_trend": "NA",
+            "fundamental_insights": "NA",
+            "fundamental_insights_description": "NA"
+        }
+        
+        # Store the data in the database if a collection is provided
+        if db_collection is not None:
+            await update_or_insert_company_data(company_name, quarter, default_financial_data, db_collection)
+            
+        return {
+            "company_name": company_name,
+            "quarter": quarter,
+            "estimates": estimates_line,
+            "cmp": cmp,
+            "result_date": result_date
+        }
+        
+    except Exception as e:
+        logger.error(f"Error processing estimate card: {str(e)}")
+        return None
+
+async def update_or_insert_company_data(company_name: str, quarter: str, financial_data: Dict[str, Any], 
+                                  collection: AsyncIOMotorCollection) -> bool:
+    """
+    Update existing company data or insert new data.
+    
+    Args:
+        company_name (str): Name of the company.
+        quarter (str): Quarter information.
+        financial_data (Dict[str, Any]): Financial data to store.
+        collection (AsyncIOMotorCollection): MongoDB collection.
+        
+    Returns:
+        bool: True if successful, False otherwise.
+    """
+    try:
+        existing_company = await collection.find_one({"company_name": company_name})
+        
+        if existing_company:
+            existing_quarters = [metric['quarter'] for metric in existing_company['financial_metrics']]
+            
+            if quarter in existing_quarters:
+                # Update the estimates for the existing quarter
+                await collection.update_one(
+                    {"company_name": company_name, "financial_metrics.quarter": quarter},
+                    {"$set": {"financial_metrics.$.estimates": financial_data['estimates']}}
+                )
+                logger.info(f"Updated estimates for {company_name} - {quarter}")
+            else:
+                # Add new quarter data
+                await collection.update_one(
+                    {"company_name": company_name},
+                    {"$push": {"financial_metrics": financial_data}}
+                )
+                logger.info(f"Added new quarter data for {company_name} - {quarter}")
+        else:
+            # Create new company entry
+            new_company = {
+                "company_name": company_name,
+                "symbol": "NA",
+                "financial_metrics": [financial_data],
+                "timestamp": datetime.utcnow()
+            }
+            await collection.insert_one(new_company)
+            logger.info(f"Created new entry for {company_name}")
+            
+        return True
+    except Exception as e:
+        logger.error(f"Error updating or inserting company data for {company_name}: {str(e)}")
+        return False
+
+async def scrape_custom_url(url: str, scrape_type: str = "earnings", db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
+    """
+    Scrape data from a custom URL.
+    
+    Args:
+        url (str): URL to scrape.
+        scrape_type (str): Type of scraping to perform (earnings or estimates).
+        db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
+        
+    Returns:
+        List[Dict[str, Any]]: List of financial data dictionaries.
+    """
+    if scrape_type == "earnings":
+        return await scrape_moneycontrol_earnings(url, db_collection)
+    elif scrape_type == "estimates":
+        return await scrape_estimates_vs_actuals(url, db_collection)
+    else:
+        logger.error(f"Invalid scrape_type: {scrape_type}. Valid types are 'earnings' or 'estimates'.")
+        return [] 

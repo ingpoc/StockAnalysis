@@ -97,14 +97,14 @@ def setup_webdriver(headless=True):
         logger.error(f"Error setting up WebDriver: {str(e)}")
         return None
 
-def login_to_moneycontrol(driver, username, password, target_url=None, skip_login=False):
+def login_to_moneycontrol(driver, username=None, password=None, target_url=None, skip_login=False):
     """
     Log in to MoneyControl website.
     
     Args:
         driver (webdriver.Chrome): WebDriver instance.
-        username (str): Username for login.
-        password (str): Password for login.
+        username (str, optional): Username for login. Defaults to env variable.
+        password (str, optional): Password for login. Defaults to env variable.
         target_url (str, optional): URL to navigate to after login.
         skip_login (bool, optional): Whether to skip login and go directly to target_url.
         
@@ -120,10 +120,9 @@ def login_to_moneycontrol(driver, username, password, target_url=None, skip_logi
             return True
         
         # Use the mobile login URL with redirect parameter
+        login_url = f"https://m.moneycontrol.com/login.php"
         if target_url:
             login_url = f"https://m.moneycontrol.com/login.php?cpurl={target_url}"
-        else:
-            login_url = "https://m.moneycontrol.com/login.php"
         
         logger.info(f"Navigating to login page: {login_url}")
         driver.get(login_url)
@@ -148,98 +147,40 @@ def login_to_moneycontrol(driver, username, password, target_url=None, skip_logi
             email_input = WebDriverWait(driver, 20).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(1) > div > input[type=text]'))
             )
+            
             password_input = WebDriverWait(driver, 20).until(
                 EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(2) > div > input[type=password]'))
             )
+            
+            # Get credentials from parameters or environment variables
+            username = username or os.getenv('MONEYCONTROL_USERNAME')
+            password = password or os.getenv('MONEYCONTROL_PASSWORD')
+            
+            if not username or not password:
+                logger.error("Username or password not provided and not found in environment variables")
+                return False
             
             email_input.send_keys(username)
             password_input.send_keys(password)
             
             # Click on login button
-            logger.info("Clicking login button")
             login_button = driver.find_element(By.CSS_SELECTOR, '#mc_login > form > button.continue.login_verify_btn')
             login_button.click()
             
-            # Try to click "Continue Without Credit Insights" if it appears
-            try:
-                logger.info("Waiting for 'Continue Without Credit Insights' button")
-                continue_without_credit_score_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_login > form > button.get_otp_signup.without_insights_btn'))
-                )
-                continue_without_credit_score_button.click()
-                logger.info("Clicked 'Continue Without Credit Insights' button")
-            except Exception as e:
-                logger.info(f"No 'Continue Without Credit Insights' button found: {str(e)}")
+            # Explicitly click "Continue Without Credit Insights"
+            continue_without_credit_score_button = WebDriverWait(driver, 20).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_login > form > button.get_otp_signup.without_insights_btn'))
+            )
+            continue_without_credit_score_button.click()
             
-            # Wait for login to complete
-            time.sleep(5)
-            
-            # Switch back to the main content
-            driver.switch_to.default_content()
-            
-            logger.info("Login successful")
+            # Sleep for 4 seconds after clicking the button
+            time.sleep(4)
+            logger.info("Successfully logged in to MoneyControl")
             return True
-            
         except Exception as e:
-            logger.warning(f"Error during iframe login: {str(e)}")
+            logger.error(f"Error during login frame interaction: {str(e)}")
+            return False
             
-            # If iframe login fails, try the direct login approach
-            logger.info("Trying direct login approach")
-            
-            # Navigate to the regular login page
-            direct_login_url = "https://www.moneycontrol.com/news/mcplus/sign-in-7732571.html"
-            driver.get(direct_login_url)
-            time.sleep(3)  # Wait for page to load
-            
-            # Enter username
-            logger.info("Entering username")
-            try:
-                email_field = driver.find_element(By.ID, "email")
-                email_field.clear()
-                email_field.send_keys(username)
-                time.sleep(1)
-                
-                # Enter password
-                logger.info("Entering password")
-                password_field = driver.find_element(By.ID, "pwd")
-                password_field.clear()
-                password_field.send_keys(password)
-                time.sleep(1)
-                
-                # Click login button
-                logger.info("Clicking login button")
-                login_button = driver.find_element(By.XPATH, "//button[contains(text(), 'Sign in')]")
-                login_button.click()
-                
-                # Wait for login to complete
-                time.sleep(5)
-            except Exception as e:
-                logger.warning(f"Direct login also failed: {str(e)}")
-                
-                # If both login methods fail but we have a target URL, try to navigate directly
-                if target_url:
-                    logger.info(f"Login failed, navigating directly to target URL: {target_url}")
-                    driver.get(target_url)
-                    time.sleep(3)  # Wait for page to load
-                    return True
-                return False
-        
-        # Navigate to target URL if provided and not already redirected
-        if target_url and driver.current_url != target_url:
-            logger.info(f"Navigating to target URL: {target_url}")
-            driver.get(target_url)
-            time.sleep(3)  # Wait for page to load
-        
-        return True
     except Exception as e:
         logger.error(f"Error during login: {str(e)}")
-        # If there's an error during login but we have a target URL, try to navigate directly
-        if target_url:
-            try:
-                logger.info(f"Error during login, navigating directly to target URL: {target_url}")
-                driver.get(target_url)
-                time.sleep(3)  # Wait for page to load
-                return True
-            except Exception as e2:
-                logger.error(f"Error navigating to target URL: {str(e2)}")
         return False 

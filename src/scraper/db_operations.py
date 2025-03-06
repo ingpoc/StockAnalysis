@@ -24,9 +24,10 @@ async def get_db_connection() -> Optional[AsyncIOMotorClient]:
         AsyncIOMotorClient: MongoDB client or None if connection failed.
     """
     try:
-        connection_string = os.getenv('MONGODB_CONNECTION_STRING')
+        # Use MONGODB_URI which is defined in the .env file
+        connection_string = os.getenv('MONGODB_URI')
         if not connection_string:
-            logger.error("MongoDB connection string not found in environment variables")
+            logger.error("MongoDB connection string not found in environment variables (MONGODB_URI)")
             return None
         
         logger.info("Connecting to MongoDB")
@@ -52,9 +53,10 @@ async def get_db_collection(collection_name: Optional[str] = None) -> Optional[A
         if not client:
             return None
         
-        database_name = os.getenv('MONGODB_DATABASE_NAME')
+        # Use MONGODB_DB_NAME which is defined in the .env file
+        database_name = os.getenv('MONGODB_DB_NAME')
         if not database_name:
-            logger.error("MongoDB database name not found in environment variables")
+            logger.error("MongoDB database name not found in environment variables (MONGODB_DB_NAME)")
             return None
         
         collection_name = collection_name or os.getenv('MONGODB_FINANCIALS_COLLECTION', 'detailed_financials')
@@ -80,9 +82,9 @@ async def store_financial_data(financial_data: Dict[str, Any], collection: Optio
     """
     try:
         # Get collection if not provided
-        if not collection:
+        if collection is None:
             collection = await get_db_collection()
-            if not collection:
+            if collection is None:
                 return False
         
         # Add timestamp if not present
@@ -111,9 +113,9 @@ async def store_multiple_financial_data(financial_data_list: List[Dict[str, Any]
     """
     try:
         # Get collection if not provided
-        if not collection:
+        if collection is None:
             collection = await get_db_collection()
-            if not collection:
+            if collection is None:
                 return False
         
         # Add timestamp if not present
@@ -182,9 +184,9 @@ async def get_financial_data_by_symbol(symbol: str, limit: int = 0, collection: 
     """
     try:
         # Get collection if not provided
-        if not collection:
+        if collection is None:
             collection = await get_db_collection()
-            if not collection:
+            if collection is None:
                 return []
         
         # Query for the symbol
@@ -211,28 +213,101 @@ async def remove_quarter_from_all_companies(quarter: str, collection: Optional[A
     Remove a specific quarter from all companies.
     
     Args:
-        quarter (str): Quarter to remove (e.g., "Q1 2023").
+        quarter (str): Quarter to remove (e.g., "Q1 FY23-24").
         collection (AsyncIOMotorCollection, optional): MongoDB collection.
         
     Returns:
-        int: Number of documents deleted.
+        int: Number of documents updated.
     """
     try:
         # Get collection if not provided
-        if not collection:
+        if collection is None:
             collection = await get_db_collection()
-            if not collection:
+            if collection is None:
                 return 0
         
-        # Query for the quarter
-        query = {"financial_metrics.quarter": {"$regex": quarter, "$options": "i"}}
-        
-        # Execute the query
+        # Update all documents to remove the specified quarter from financial_metrics
         logger.info(f"Removing quarter {quarter} from all companies")
-        result = await collection.delete_many(query)
-        deleted_count = result.deleted_count
-        logger.info(f"Removed quarter {quarter} from {deleted_count} documents")
-        return deleted_count
+        result = await collection.update_many(
+            {},
+            {
+                "$pull": {
+                    "financial_metrics": {
+                        "quarter": quarter
+                    }
+                }
+            }
+        )
+        
+        logger.info(f"Removed quarter {quarter} from {result.modified_count} companies")
+        return result.modified_count
     except PyMongoError as e:
         logger.error(f"Error removing quarter {quarter} from all companies: {str(e)}")
-        return 0 
+        return 0
+
+async def update_or_insert_financial_data(financial_data: Dict[str, Any], collection: Optional[AsyncIOMotorCollection] = None) -> bool:
+    """
+    Updates existing company data or inserts new financial data in MongoDB.
+    This prevents duplicate entries for the same company and quarter.
+    
+    Args:
+        financial_data (Dict[str, Any]): Financial data to store or update.
+        collection (AsyncIOMotorCollection, optional): MongoDB collection.
+        
+    Returns:
+        bool: True if data was stored/updated successfully, False otherwise.
+    """
+    try:
+        # Get collection if not provided
+        if collection is None:
+            collection = await get_db_collection()
+            if collection is None:
+                return False
+                
+        company_name = financial_data.get("company_name")
+        if not company_name:
+            logger.error("Cannot update or insert data without a company name")
+            return False
+            
+        # Check if we have metrics data
+        metrics = financial_data.get("financial_metrics", [])
+        if not metrics:
+            logger.warning(f"No financial metrics to update for {company_name}")
+            return False
+            
+        # Find the existing company document
+        existing_company = await collection.find_one({"company_name": company_name})
+        
+        if existing_company:
+            # Company exists, update by adding new financial metrics
+            company_id = existing_company["_id"]
+            existing_metrics = existing_company.get("financial_metrics", [])
+            existing_quarters = {metric.get("quarter") for metric in existing_metrics if metric.get("quarter")}
+            
+            # Filter out metrics for quarters that already exist
+            new_metrics = [
+                metric for metric in metrics 
+                if metric.get("quarter") and metric.get("quarter") not in existing_quarters
+            ]
+            
+            if not new_metrics:
+                logger.info(f"No new quarterly data to add for {company_name}")
+                return True
+                
+            # Update the document by adding new metrics
+            logger.info(f"Adding {len(new_metrics)} new quarters to {company_name}")
+            result = await collection.update_one(
+                {"_id": company_id},
+                {"$push": {"financial_metrics": {"$each": new_metrics}}}
+            )
+            
+            return result.modified_count > 0
+        else:
+            # Company doesn't exist, insert new document
+            logger.info(f"Inserting new company data for {company_name}")
+            result = await collection.insert_one(financial_data)
+            return result.inserted_id is not None
+            
+    except PyMongoError as e:
+        logger.error(f"Error updating financial data: {str(e)}")
+        return False 

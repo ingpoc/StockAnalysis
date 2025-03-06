@@ -7,262 +7,103 @@ import logging
 from typing import Dict, Any, Optional, List
 from bs4 import BeautifulSoup
 from datetime import datetime
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 
 # Import the centralized logger
 from src.utils.logger import logger
 
-def extract_financial_data(soup: BeautifulSoup) -> Dict[str, Any]:
+def extract_financial_data(card):
     """
-    Extract financial data from a BeautifulSoup object.
+    Extract financial data from a result card.
     
     Args:
-        soup (BeautifulSoup): BeautifulSoup object of the page.
+        card: BeautifulSoup element representing a result card.
         
     Returns:
-        Dict[str, Any]: Dictionary of financial data.
+        Dict[str, Any]: Dictionary of extracted financial data.
     """
-    logger.info("Extracting financial data")
-    
-    # Initialize with None to indicate data not found
-    financial_data = {
-        "quarter": None,
-        "cmp": None,
-        "revenue": None,
-        "gross_profit": None,
-        "net_profit": None,
-        "net_profit_growth": None,
-        "gross_profit_growth": None,
-        "revenue_growth": None,
-        "result_date": None,
-        "report_type": None,
-        # Advanced metrics
-        "market_cap": None,
-        "face_value": None,
-        "book_value": None,
-        "dividend_yield": None,
-        "ttm_eps": None,
-        "ttm_pe": None,
-        "pb_ratio": None,
-        "sector_pe": None,
-        "piotroski_score": None,
-        "revenue_growth_3yr_cagr": None,
-        "net_profit_growth_3yr_cagr": None,
-        "operating_profit_growth_3yr_cagr": None,
-        "strengths": None,
-        "weaknesses": None,
-        "technicals_trend": None,
-        "fundamental_insights": None
-    }
-    
     try:
-        # Log the HTML for debugging
-        logger.debug(f"HTML to extract from: {soup}")
-        
-        # Extract quarter information
-        # Based on the search results, it might be in a format like "Q3 FY24-25"
-        quarter_selectors = [
-            '.EarningUpdateCard_btmDtTmStrip__V03pl',  # New class for quarter info
-            'table th:contains("Q3")',
-            'table th:contains("Q")',
-            'div:contains("Q3 FY")',
-            'div:contains("Q")',
-            'span:contains("Q3")',
-            'span:contains("Q")'
-        ]
-        
-        for selector in quarter_selectors:
-            try:
-                quarter_element = soup.select_one(selector)
-                if quarter_element:
-                    quarter_text = quarter_element.text.strip()
-                    # Extract quarter using regex
-                    quarter_match = re.search(r'Q[1-4]\s*FY\d{2}-\d{2}', quarter_text)
-                    if quarter_match:
-                        financial_data["quarter"] = quarter_match.group(0)
-                        break
-            except Exception as e:
-                logger.warning(f"Error extracting quarter with selector {selector}: {str(e)}")
-        
-        # Extract CMP (Current Market Price)
-        # Based on the search results, it might be in a format like "14.98 (1.56%)"
-        cmp_selectors = [
-            '.EarningUpdateCard_stkData__rEKCf',  # New class for stock data
-            'div:contains("%")',
-            'span:contains("%")',
-            'h3 + div'  # Div after h3
-        ]
-        
-        for selector in cmp_selectors:
-            try:
-                cmp_element = soup.select_one(selector)
-                if cmp_element:
-                    cmp_text = cmp_element.text.strip()
-                    # Extract CMP using regex
-                    cmp_match = re.search(r'\d+\.\d+\s*\(\-?\d+\.\d+%\)', cmp_text)
-                    if cmp_match:
-                        financial_data["cmp"] = cmp_match.group(0)
-                        break
-            except Exception as e:
-                logger.warning(f"Error extracting CMP with selector {selector}: {str(e)}")
-        
-        # Extract revenue, gross profit, and net profit
-        # Look for green/red text elements which might contain growth percentages
-        growth_selectors = [
-            '.EarningUpdateCard_greentxt__6okOx',  # New class for green text (positive growth)
-            '.EarningUpdateCard_redtxt__C7thr',    # New class for red text (negative growth)
-            '.green',
-            '.red',
-            'span.up',
-            'span.down'
-        ]
-        
-        growth_elements = []
-        for selector in growth_selectors:
-            try:
-                elements = soup.select(selector)
-                growth_elements.extend(elements)
-            except Exception as e:
-                logger.warning(f"Error finding growth elements with selector {selector}: {str(e)}")
-        
-        # Process growth elements
-        if growth_elements:
-            logger.info(f"Found {len(growth_elements)} growth elements")
-            
-            # Try to identify which growth element corresponds to which metric
-            for i, element in enumerate(growth_elements):
-                text = element.text.strip()
-                
-                # Check if it's a percentage
-                if '%' in text:
-                    # Determine which metric this growth percentage belongs to
-                    if i == 0 or 'revenue' in text.lower() or 'sales' in text.lower():
-                        financial_data["revenue_growth"] = text
-                    elif i == 1 or 'gross' in text.lower() or 'operating' in text.lower():
-                        financial_data["gross_profit_growth"] = text
-                    elif i == 2 or 'net' in text.lower() or 'profit' in text.lower():
-                        financial_data["net_profit_growth"] = text
-        
-        # Extract actual values for revenue, gross profit, and net profit
-        # These might be near the growth percentages or in separate elements
-        value_selectors = [
-            'div:contains("Rs.")',
-            'div:contains("₹")',
-            'span:contains("Rs.")',
-            'span:contains("₹")'
-        ]
-        
-        value_elements = []
-        for selector in value_selectors:
-            try:
-                elements = soup.select(selector)
-                value_elements.extend(elements)
-            except Exception as e:
-                logger.warning(f"Error finding value elements with selector {selector}: {str(e)}")
-        
-        # Process value elements
-        if value_elements:
-            logger.info(f"Found {len(value_elements)} value elements")
-            
-            # Try to identify which value element corresponds to which metric
-            for i, element in enumerate(value_elements):
-                text = element.text.strip()
-                
-                # Check if it contains a currency symbol or "cr" (crore)
-                if 'Rs.' in text or '₹' in text or 'cr' in text.lower():
-                    # Extract the numeric value
-                    value_match = re.search(r'\d+(\.\d+)?', text)
-                    if value_match:
-                        value = value_match.group(0)
-                        
-                        # Determine which metric this value belongs to
-                        if i == 0 or 'revenue' in text.lower() or 'sales' in text.lower():
-                            financial_data["revenue"] = value
-                        elif i == 1 or 'gross' in text.lower() or 'operating' in text.lower():
-                            financial_data["gross_profit"] = value
-                        elif i == 2 or 'net' in text.lower() or 'profit' in text.lower():
-                            financial_data["net_profit"] = value
-        
-        # Extract result date
-        date_selectors = [
-            '.EarningUpdateCard_btmDtTmStrip__V03pl',  # New class for date info
-            'div:contains("Result Date")',
-            'span:contains("Result Date")',
-            'div:contains("Date")',
-            'span:contains("Date")'
-        ]
-        
-        for selector in date_selectors:
-            try:
-                date_element = soup.select_one(selector)
-                if date_element:
-                    date_text = date_element.text.strip()
-                    # Extract date using regex
-                    date_match = re.search(r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}', date_text)
-                    if date_match:
-                        financial_data["result_date"] = date_match.group(0)
-                        break
-            except Exception as e:
-                logger.warning(f"Error extracting result date with selector {selector}: {str(e)}")
-        
-        # Extract report type (Standalone/Consolidated)
-        report_selectors = [
-            'div:contains("Standalone")',
-            'div:contains("Consolidated")',
-            'span:contains("Standalone")',
-            'span:contains("Consolidated")'
-        ]
-        
-        for selector in report_selectors:
-            try:
-                report_element = soup.select_one(selector)
-                if report_element:
-                    report_text = report_element.text.strip()
-                    if 'standalone' in report_text.lower():
-                        financial_data["report_type"] = "Standalone"
-                        break
-                    elif 'consolidated' in report_text.lower():
-                        financial_data["report_type"] = "Consolidated"
-                        break
-            except Exception as e:
-                logger.warning(f"Error extracting report type with selector {selector}: {str(e)}")
-        
-        # If we couldn't extract the data using the above methods, try a more general approach
-        if not any([financial_data["revenue"], financial_data["gross_profit"], financial_data["net_profit"]]):
-            logger.warning("Could not extract financial data using specific selectors, trying general approach")
-            
-            # Get all text from the card
-            all_text = soup.get_text()
-            
-            # Look for patterns like "Revenue: 123 cr" or "Net Profit: 45 cr"
-            revenue_match = re.search(r'Revenue:?\s*(\d+(\.\d+)?)', all_text)
-            if revenue_match:
-                financial_data["revenue"] = revenue_match.group(1)
-            
-            gross_profit_match = re.search(r'Gross Profit:?\s*(\d+(\.\d+)?)', all_text)
-            if gross_profit_match:
-                financial_data["gross_profit"] = gross_profit_match.group(1)
-            
-            net_profit_match = re.search(r'Net Profit:?\s*(\d+(\.\d+)?)', all_text)
-            if net_profit_match:
-                financial_data["net_profit"] = net_profit_match.group(1)
-            
-            # Look for growth percentages
-            revenue_growth_match = re.search(r'Revenue Growth:?\s*(\-?\d+(\.\d+)?%)', all_text)
-            if revenue_growth_match:
-                financial_data["revenue_growth"] = revenue_growth_match.group(1)
-            
-            gross_profit_growth_match = re.search(r'Gross Profit Growth:?\s*(\-?\d+(\.\d+)?%)', all_text)
-            if gross_profit_growth_match:
-                financial_data["gross_profit_growth"] = gross_profit_growth_match.group(1)
-            
-            net_profit_growth_match = re.search(r'Net Profit Growth:?\s*(\-?\d+(\.\d+)?%)', all_text)
-            if net_profit_growth_match:
-                financial_data["net_profit_growth"] = net_profit_growth_match.group(1)
-        
-        return financial_data
+        return {
+            "cmp": card.select_one('p.rapidResCardWeb_priceTxt___5MvY').text.strip() if card.select_one('p.rapidResCardWeb_priceTxt___5MvY') else None,
+            "revenue": card.select_one('tr:nth-child(1) td:nth-child(2)').text.strip() if card.select_one('tr:nth-child(1) td:nth-child(2)') else None,
+            "gross_profit": card.select_one('tr:nth-child(2) td:nth-child(2)').text.strip() if card.select_one('tr:nth-child(2) td:nth-child(2)') else None,
+            "net_profit": card.select_one('tr:nth-child(3) td:nth-child(2)').text.strip() if card.select_one('tr:nth-child(3) td:nth-child(2)') else None,
+            "net_profit_growth": card.select_one('tr:nth-child(3) td:nth-child(4)').text.strip() if card.select_one('tr:nth-child(3) td:nth-child(4)') else None,
+            "gross_profit_growth": card.select_one('tr:nth-child(2) td:nth-child(4)').text.strip() if card.select_one('tr:nth-child(2) td:nth-child(4)') else None,
+            "revenue_growth": card.select_one('tr:nth-child(1) td:nth-child(4)').text.strip() if card.select_one('tr:nth-child(1) td:nth-child(4)') else None,
+            "quarter": card.select_one('tr th:nth-child(1)').text.strip() if card.select_one('tr th:nth-child(1)') else None,
+            "result_date": card.select_one('p.rapidResCardWeb_gryTxtOne__mEhU_').text.strip() if card.select_one('p.rapidResCardWeb_gryTxtOne__mEhU_') else None,
+            "report_type": card.select_one('p.rapidResCardWeb_bottomText__p8YzI').text.strip() if card.select_one('p.rapidResCardWeb_bottomText__p8YzI') else None,
+        }
     except Exception as e:
-        logger.error(f"Error extracting financial data: {str(e)}")
-        return financial_data
+        logger.error(f"Error extracting financial data from card: {str(e)}")
+        return {}
+
+def scrape_financial_metrics(driver, stock_link):
+    """
+    Scrape additional financial metrics from a company's stock page.
+    
+    Args:
+        driver: WebDriver instance.
+        stock_link: URL of the company's stock page.
+        
+    Returns:
+        Dict[str, Any]: Dictionary of additional financial metrics.
+        str: Company symbol.
+    """
+    try:
+        # Open a new tab for the stock page
+        driver.execute_script(f"window.open('{stock_link}', '_blank');")
+        driver.switch_to.window(driver.window_handles[-1])
+        
+        # Wait for the page to load
+        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
+        
+        # Parse the page source
+        detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
+        
+        # Extract additional metrics
+        metrics = {
+            "market_cap": detailed_soup.select_one('tr:nth-child(7) td.nsemktcap.bsemktcap').text.strip() if detailed_soup.select_one('tr:nth-child(7) td.nsemktcap.bsemktcap') else None,
+            "face_value": detailed_soup.select_one('tr:nth-child(7) td.nsefv.bsefv').text.strip() if detailed_soup.select_one('tr:nth-child(7) td.nsefv.bsefv') else None,
+            "book_value": detailed_soup.select_one('tr:nth-child(5) td.nsebv.bsebv').text.strip() if detailed_soup.select_one('tr:nth-child(5) td.nsebv.bsebv') else None,
+            "dividend_yield": detailed_soup.select_one('tr:nth-child(6) td.nsedy.bsedy').text.strip() if detailed_soup.select_one('tr:nth-child(6) td.nsedy.bsedy') else None,
+            "ttm_eps": detailed_soup.select_one('tr:nth-child(1) td:nth-child(2) span.nseceps.bseceps').text.strip() if detailed_soup.select_one('tr:nth-child(1) td:nth-child(2) span.nseceps.bseceps') else None,
+            "ttm_pe": detailed_soup.select_one('tr:nth-child(2) td:nth-child(2) span.nsepe.bsepe').text.strip() if detailed_soup.select_one('tr:nth-child(2) td:nth-child(2) span.nsepe.bsepe') else None,
+            "pb_ratio": detailed_soup.select_one('tr:nth-child(3) td:nth-child(2) span.nsepb.bsepb').text.strip() if detailed_soup.select_one('tr:nth-child(3) td:nth-child(2) span.nsepb.bsepb') else None,
+            "sector_pe": detailed_soup.select_one('tr:nth-child(4) td.nsesc_ttm.bsesc_ttm').text.strip() if detailed_soup.select_one('tr:nth-child(4) td.nsesc_ttm.bsesc_ttm') else None,
+            "piotroski_score": detailed_soup.select_one('div:nth-child(2) div.fpioi div.nof').text.strip() if detailed_soup.select_one('div:nth-child(2) div.fpioi div.nof') else None,
+            "revenue_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("Revenue") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("Revenue") td:nth-child(2)') else None,
+            "net_profit_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("NetProfit") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("NetProfit") td:nth-child(2)') else None,
+            "operating_profit_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("OperatingProfit") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("OperatingProfit") td:nth-child(2)') else None,
+            "strengths": detailed_soup.select_one('#swot_ls > a > strong').text.strip() if detailed_soup.select_one('#swot_ls > a > strong') else None,
+            "weaknesses": detailed_soup.select_one('#swot_lw > a > strong').text.strip() if detailed_soup.select_one('#swot_lw > a > strong') else None,
+            "technicals_trend": detailed_soup.select_one('#techAnalysis a[style*="flex"]').text.strip() if detailed_soup.select_one('#techAnalysis a[style*="flex"]') else None,
+            "fundamental_insights": detailed_soup.select_one('#mc_essenclick > div.bx_mceti.mc_insght > div > div').text.strip() if detailed_soup.select_one('#mc_essenclick > div.bx_mceti.mc_insght > div > div') else None,
+            "fundamental_insights_description": detailed_soup.select_one('#insight_class').text.strip() if detailed_soup.select_one('#insight_class') else None
+        }
+        
+        # Extract the company symbol
+        symbol = detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p').text.strip() if detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p') else None
+        
+        # Close the tab and switch back to the main window
+        driver.close()
+        driver.switch_to.window(driver.window_handles[0])
+        
+        return metrics, symbol
+    except Exception as e:
+        logger.error(f"Error scraping financial metrics: {str(e)}")
+        
+        # Make sure to switch back to the main window
+        try:
+            driver.close()
+            driver.switch_to.window(driver.window_handles[0])
+        except:
+            pass
+            
+        return None, None
 
 def extract_company_info(soup: BeautifulSoup) -> Dict[str, str]:
     """

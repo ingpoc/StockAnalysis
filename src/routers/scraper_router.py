@@ -50,7 +50,7 @@ async def get_financials_collection() -> AsyncIOMotorCollection:
         AsyncIOMotorCollection: MongoDB collection for financial data.
     """
     collection = await get_db_collection()
-    if not collection:
+    if collection is None:
         raise HTTPException(status_code=500, detail="Failed to connect to database")
     return collection
 
