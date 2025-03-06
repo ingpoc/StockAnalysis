@@ -8,7 +8,7 @@ from src.api.endpoints import (
     ai_insights_router,
     database_management_router
 )
-from src.routers.scraper import router as scraper_router
+from src.routers.scraper_router import router as scraper_router
 
 # Create main API router
 router = APIRouter()
@@ -47,7 +47,7 @@ router.include_router(database_management_router, prefix="/database", tags=["dat
 # /scraper/company/{company_name} - Get financial data for a specific company
 # /database/backup - Backup the database
 # /database/restore - Restore the database from a backup
-# /database/check - Check the database structure and content
+# /database/validate - Validate the database structure and content
 # /database/backups - List all available database backups
 
 # Add other routers as needed

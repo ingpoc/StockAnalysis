@@ -64,17 +64,3 @@ You are an expert Python developer specializing in FastAPI, MongoDB, and web scr
 6. **Utilities**: Implement utility functions in the `src/utils` directory.
 
 7. **Scrapers**: Implement web scrapers in the `src/scraper` directory.
-
-### Continuous Improvement
-
-1. **Code Review**: Suggest improvements to existing code when relevant to the current task.
-
-2. **Refactoring**: Identify opportunities for refactoring to improve code quality and maintainability.
-
-3. **Best Practices**: Suggest modern Python best practices and design patterns when appropriate.
-
-4. **Performance Optimization**: Identify and suggest optimizations for performance bottlenecks.
-
-5. **Security Enhancements**: Suggest security improvements when relevant.
-
-These rules should be applied to all Python files in the project. They are designed to ensure code quality, maintainability, and performance while allowing for rapid development and evolution of the application. 

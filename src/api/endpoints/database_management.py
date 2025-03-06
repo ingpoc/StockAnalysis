@@ -6,6 +6,11 @@ import logging
 from datetime import datetime
 import subprocess
 from pathlib import Path
+from bson import ObjectId
+
+# Import the database utility functions
+from src.utils.database import backup_database, restore_database
+from src.utils.database.validate_database import validate_database
 
 # Set up logging
 logging.basicConfig(
@@ -16,29 +21,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# Get the path to the tests directory
-TESTS_DIR = Path(__file__).parent.parent.parent.parent / "tests"
-BACKUP_SCRIPT = TESTS_DIR / "backup_database.py"
-RESTORE_SCRIPT = TESTS_DIR / "restore_database.py"
-CHECK_SCRIPT = TESTS_DIR / "check_database.py"
+# Path to the backups directory
 DB_BACKUPS_DIR = Path(__file__).parent.parent.parent.parent / "db_backups"
 
 @router.post("/backup", status_code=200)
-async def backup_database(background_tasks: BackgroundTasks):
+async def backup_database_endpoint(background_tasks: BackgroundTasks):
     """
     Backup the database to a JSON file.
     """
     try:
-        # Run the backup script as a background task
+        # Run the backup function as a background task
         def run_backup():
-            result = subprocess.run(
-                [sys.executable, str(BACKUP_SCRIPT)],
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Backup script output: {result.stdout}")
-            if result.returncode != 0:
-                logger.error(f"Backup script error: {result.stderr}")
+            try:
+                backup_file = backup_database()
+                logger.info(f"Database backup completed successfully: {backup_file}")
+            except Exception as e:
+                logger.error(f"Backup error: {str(e)}")
                 
         background_tasks.add_task(run_backup)
         return {"message": "Database backup started"}
@@ -47,25 +45,21 @@ async def backup_database(background_tasks: BackgroundTasks):
         raise HTTPException(status_code=500, detail=f"Error starting backup: {str(e)}")
 
 @router.post("/restore", status_code=200)
-async def restore_database(background_tasks: BackgroundTasks, file_path: str = None):
+async def restore_database_endpoint(background_tasks: BackgroundTasks, file_path: str = None):
     """
     Restore the database from a backup file.
     """
     try:
-        # Run the restore script as a background task
+        # Run the restore function as a background task
         def run_restore():
-            cmd = [sys.executable, str(RESTORE_SCRIPT)]
-            if file_path:
-                cmd.extend(["--file", file_path])
-                
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Restore script output: {result.stdout}")
-            if result.returncode != 0:
-                logger.error(f"Restore script error: {result.stderr}")
+            try:
+                success = restore_database(file_path)
+                if success:
+                    logger.info("Database restoration completed successfully")
+                else:
+                    logger.error("Database restoration failed")
+            except Exception as e:
+                logger.error(f"Restore error: {str(e)}")
                 
         background_tasks.add_task(run_restore)
         return {"message": "Database restoration started"}
@@ -74,27 +68,39 @@ async def restore_database(background_tasks: BackgroundTasks, file_path: str = N
         raise HTTPException(status_code=500, detail=f"Error starting restoration: {str(e)}")
 
 @router.get("/check", status_code=200)
-async def check_database(background_tasks: BackgroundTasks):
+async def check_database():
     """
     Check the database structure and content.
     """
     try:
-        # Run the check script as a background task
-        def run_check():
-            result = subprocess.run(
-                [sys.executable, str(CHECK_SCRIPT)],
-                capture_output=True,
-                text=True
-            )
-            logger.info(f"Check script output: {result.stdout}")
-            if result.returncode != 0:
-                logger.error(f"Check script error: {result.stderr}")
-                
-        background_tasks.add_task(run_check)
-        return {"message": "Database check started"}
+        # Call the validate endpoint directly
+        validation_result = await validate_database_endpoint()
+        
+        # Extract relevant information for the frontend
+        document_count = 0
+        quarters = []
+        
+        # Get document count from detailed_financials collection
+        if "summary" in validation_result and "collections_summary" in validation_result["summary"]:
+            collections = validation_result["summary"]["collections_summary"]
+            if "detailed_financials" in collections:
+                document_count = collections["detailed_financials"].get("document_count", 0)
+                quarters = collections["detailed_financials"].get("quarters", [])
+        
+        # Format the response for the frontend
+        return {
+            "success": validation_result["status"] != "error",
+            "documentCount": document_count,
+            "quarters": quarters,
+            "errors": len(validation_result.get("errors", [])),
+            "warnings": len(validation_result.get("warnings", [])),
+            "details": validation_result
+        }
     except Exception as e:
-        logger.error(f"Error starting database check: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error starting database check: {str(e)}")
+        logger.error(f"Error checking database: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error checking database: {str(e)}")
 
 @router.get("/backups", status_code=200)
 async def list_backups():
@@ -118,4 +124,39 @@ async def list_backups():
         return {"backups": sorted(backups, key=lambda x: x["created"], reverse=True)}
     except Exception as e:
         logger.error(f"Error listing backups: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error listing backups: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Error listing backups: {str(e)}")
+
+@router.get("/validate", status_code=200)
+async def validate_database_endpoint():
+    """
+    Validate the database structure and content.
+    """
+    try:
+        logger.info("Starting database validation")
+        
+        # Create a new validator instance directly
+        from src.utils.database.validate_database import DatabaseValidator
+        validator = DatabaseValidator()
+        validation_result = await validator.validate_all()
+        
+        # Custom JSON serialization to handle non-serializable types
+        def json_serializer(obj):
+            if isinstance(obj, (datetime, ObjectId)):
+                return str(obj)
+            return None
+        
+        # Log a summary instead of the full result
+        summary = {
+            "status": "success",
+            "errors_count": len(validation_result.get("errors", [])),
+            "warnings_count": len(validation_result.get("warnings", [])),
+            "collections_checked": len(validation_result.get("summary", {}).get("collections_summary", {}))
+        }
+        logger.info(f"Database validation completed with summary: {summary}")
+        
+        return validation_result
+    except Exception as e:
+        logger.error(f"Error validating database: {str(e)}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Error validating database: {str(e)}") 
