@@ -45,10 +45,10 @@ from src.utils.logger import logger
 # URL constants
 URL_TYPES = {
     "LR": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy",
-    "BP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/best-performers/",
-    "WP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/worst-performers/",
-    "PT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/positive-trend/",
-    "NT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/negative-trend/"
+    "BP": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=BP&subType=yoy",
+    "WP": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=WP&subType=yoy",
+    "PT": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=PT&subType=yoy",
+    "NT": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=NT&subType=yoy"
 }
 
 async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:

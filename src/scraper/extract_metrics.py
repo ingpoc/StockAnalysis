@@ -64,7 +64,7 @@ def scrape_financial_metrics(driver, stock_link):
         driver.switch_to.window(driver.window_handles[-1])
         
         # Wait for the page to load
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
+        WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
         
         # Parse the page source
         detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
