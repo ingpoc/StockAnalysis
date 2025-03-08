@@ -10,6 +10,7 @@ from datetime import datetime
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import NoSuchWindowException, InvalidSessionIdException
 
 # Import the centralized logger
 from src.utils.logger import logger
@@ -53,7 +54,11 @@ def scrape_financial_metrics(driver, stock_link):
         Dict[str, Any]: Dictionary of additional financial metrics.
         str: Company symbol.
     """
+    original_window = None
     try:
+        # Remember the original window handle
+        original_window = driver.current_window_handle
+        
         # Open a new tab for the stock page
         driver.execute_script(f"window.open('{stock_link}', '_blank');")
         driver.switch_to.window(driver.window_handles[-1])
@@ -88,21 +93,36 @@ def scrape_financial_metrics(driver, stock_link):
         # Extract the company symbol
         symbol = detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p').text.strip() if detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p') else None
         
+        # Check if we collected meaningful data
+        if not any(metrics.values()) or not symbol:
+            logger.warning("Failed to collect meaningful metrics data from the stock page")
+        
         # Close the tab and switch back to the main window
-        driver.close()
-        driver.switch_to.window(driver.window_handles[0])
+        try:
+            driver.close()
+            driver.switch_to.window(original_window)
+        except Exception as tab_close_error:
+            logger.error(f"Error closing tab: {str(tab_close_error)}")
+            # If we can't close the tab and switch back, we need to force a failure
+            raise
         
         return metrics, symbol
+    except (NoSuchWindowException, InvalidSessionIdException) as e:
+        # Log a cleaner message without stack trace
+        logger.error("Browser window was closed during metrics scraping")
+        # Return None for both values to signal incomplete data
+        return None, None
     except Exception as e:
         logger.error(f"Error scraping financial metrics: {str(e)}")
         
-        # Make sure to switch back to the main window
+        # Make sure to switch back to the main window if possible
         try:
-            driver.close()
-            driver.switch_to.window(driver.window_handles[0])
-        except:
-            pass
-            
+            if original_window and original_window in driver.window_handles:
+                driver.switch_to.window(original_window)
+        except Exception as switch_error:
+            logger.error(f"Error switching back to main window: {str(switch_error)}")
+        
+        # Return None for both values to signal incomplete data
         return None, None
 
 def extract_company_info(soup: BeautifulSoup) -> Dict[str, str]:

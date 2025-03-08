@@ -21,12 +21,12 @@ load_dotenv()
 # Import the centralized logger
 from src.utils.logger import logger
 
-def setup_webdriver(headless=True):
+def setup_webdriver(headless=False):
     """
     Set up and configure the WebDriver for scraping.
     
     Args:
-        headless (bool): Whether to run the browser in headless mode.
+        headless (bool): Whether to run the browser in headless mode. Default is False to show the browser.
         
     Returns:
         webdriver.Chrome: Configured WebDriver instance or None if setup fails.
@@ -112,11 +112,14 @@ def login_to_moneycontrol(driver, username=None, password=None, target_url=None,
         bool: True if login was successful or skipped, False otherwise.
     """
     try:
-        # If skip_login is True and target_url is provided, go directly to target_url
-        if skip_login and target_url:
-            logger.info(f"Skipping login and navigating directly to target URL: {target_url}")
-            driver.get(target_url)
-            time.sleep(3)  # Wait for page to load
+        # If skip_login is True, go directly to target_url or return True
+        if skip_login:
+            if target_url:
+                logger.info(f"Skipping login and navigating directly to target URL: {target_url}")
+                driver.get(target_url)
+                time.sleep(3)  # Wait for page to load
+            else:
+                logger.info("Skipping login as requested")
             return True
         
         # Use the mobile login URL with redirect parameter
@@ -128,58 +131,195 @@ def login_to_moneycontrol(driver, username=None, password=None, target_url=None,
         driver.get(login_url)
         time.sleep(3)  # Wait for page to load
         
-        try:
-            # Switch to the login iframe
-            logger.info("Waiting for login frame to be available")
-            WebDriverWait(driver, 20).until(
-                EC.frame_to_be_available_and_switch_to_it((By.ID, "login_frame"))
-            )
-            logger.info("Switched to login frame")
-            
-            # Click on the password login tab
-            logger.info("Clicking on password login tab")
-            WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_log_otp_pre > div.loginwithTab > ul > li.signup_ctc'))
-            ).click()
-            
-            # Fill in email and password
-            logger.info("Entering username and password")
-            email_input = WebDriverWait(driver, 20).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(1) > div > input[type=text]'))
-            )
-            
-            password_input = WebDriverWait(driver, 20).until(
-                EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(2) > div > input[type=password]'))
-            )
-            
-            # Get credentials from parameters or environment variables
-            username = username or os.getenv('MONEYCONTROL_USERNAME')
-            password = password or os.getenv('MONEYCONTROL_PASSWORD')
-            
-            if not username or not password:
-                logger.error("Username or password not provided and not found in environment variables")
+        # Enhanced ad removal function - to be called repeatedly if needed
+        def remove_ad_overlays():
+            """Remove ad overlays and return True if successful, False otherwise."""
+            try:
+                logger.info("Removing ad overlays before login...")
+                
+                # Check for reward ad units which are particularly problematic
+                reward_ads = driver.find_elements(By.CSS_SELECTOR, 'ins[id*="REWARD"]')
+                if reward_ads:
+                    logger.info(f"Found {len(reward_ads)} reward ad elements")
+                    
+                    # More specific targeting for reward ads
+                    driver.execute_script("""
+                        // Remove specific reward ads
+                        const rewardAds = document.querySelectorAll('ins[id*="REWARD"]');
+                        rewardAds.forEach(ad => {
+                            if (ad.parentNode) {
+                                ad.parentNode.removeChild(ad);
+                            }
+                        });
+                    """)
+                
+                # Remove all types of ads and overlays
+                driver.execute_script("""
+                    // Remove all Google ad iframes
+                    const adIframes = document.querySelectorAll('iframe[id^="google_ads_iframe"]');
+                    adIframes.forEach(iframe => {
+                        if (iframe.parentNode) {
+                            iframe.parentNode.removeChild(iframe);
+                        }
+                    });
+                    
+                    // Remove all ad containers
+                    const adContainers = document.querySelectorAll('div[id*="google_ads"], div[id*="ad_container"], div[class*="ad-"], div[id*="ad-"]');
+                    adContainers.forEach(container => {
+                        if (container.parentNode) {
+                            container.parentNode.removeChild(container);
+                        }
+                    });
+                    
+                    // Remove any overlay divs
+                    const overlays = document.querySelectorAll('div[class*="overlay"], div[id*="overlay"], .modal, .popup, div[style*="position: fixed"]');
+                    overlays.forEach(overlay => {
+                        if (overlay.parentNode) {
+                            overlay.parentNode.removeChild(overlay);
+                        }
+                    });
+                    
+                    // Remove any fixed position elements that might be blocking
+                    const fixedElements = document.querySelectorAll('div[style*="z-index"][style*="position: fixed"], div[style*="position: fixed"][style*="z-index"]');
+                    fixedElements.forEach(el => {
+                        if (el.parentNode) {
+                            el.parentNode.removeChild(el);
+                        }
+                    });
+                    
+                    // Remove inline styles that might be blocking clicks
+                    document.querySelectorAll('body, html').forEach(el => {
+                        el.style.overflow = 'auto';
+                        el.style.position = 'static';
+                    });
+                    
+                    // Remove specific HTML structure often used for ads
+                    const adWrappers = document.querySelectorAll('div[class*="adWrapper"], div[id*="adWrapper"]');
+                    adWrappers.forEach(wrapper => {
+                        if (wrapper.parentNode) {
+                            wrapper.parentNode.removeChild(wrapper);
+                        }
+                    });
+                """)
+                
+                # Also try to click on any close buttons
+                try:
+                    close_buttons = driver.find_elements(By.CSS_SELECTOR, '.close-btn, .closeBtn, .close, button[aria-label="Close"], button[title="Close"]')
+                    for btn in close_buttons:
+                        try:
+                            btn.click()
+                            logger.info("Clicked on close button for an overlay")
+                            time.sleep(0.5)
+                        except:
+                            pass
+                except:
+                    pass
+                
+                # Wait for a moment after removing ads
+                time.sleep(2)
+                
+                # Check for any remaining ad iframes (just for logging)
+                remaining_ads = driver.find_elements(By.CSS_SELECTOR, "iframe[id^='google_ads_iframe']")
+                if remaining_ads:
+                    logger.info(f"Still found {len(remaining_ads)} ad iframes after removal attempt")
+                    return False
+                else:
+                    logger.info("Successfully removed all ad iframes")
+                    return True
+                    
+            except Exception as e:
+                logger.warning(f"Error while handling ad overlays: {str(e)}")
                 return False
+        
+        # Attempt to remove ads multiple times if needed
+        for attempt in range(3):
+            if remove_ad_overlays():
+                break
+            logger.info(f"Ad removal attempt {attempt+1} completed, trying again...")
+            time.sleep(1)
+        
+        # Now try to interact with the login frame
+        max_login_attempts = 3
+        for attempt in range(max_login_attempts):
+            try:
+                # Switch to the login iframe
+                logger.info("Waiting for login frame to be available")
+                WebDriverWait(driver, 20).until(
+                    EC.frame_to_be_available_and_switch_to_it((By.ID, "login_frame"))
+                )
+                logger.info("Switched to login frame")
+                
+                # Click on the password login tab
+                logger.info("Clicking on password login tab")
+                WebDriverWait(driver, 20).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_log_otp_pre > div.loginwithTab > ul > li.signup_ctc'))
+                ).click()
+                
+                # Fill in email and password
+                logger.info("Entering username and password")
+                email_input = WebDriverWait(driver, 20).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(1) > div > input[type=text]'))
+                )
+                
+                password_input = WebDriverWait(driver, 20).until(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, '#mc_login > form > div:nth-child(2) > div > input[type=password]'))
+                )
+                
+                # Get credentials from parameters or environment variables
+                username = username or os.getenv('MONEYCONTROL_USERNAME')
+                password = password or os.getenv('MONEYCONTROL_PASSWORD')
+                
+                if not username or not password:
+                    logger.error("Username or password not provided and not found in environment variables")
+                    return False
+                
+                email_input.send_keys(username)
+                password_input.send_keys(password)
+                
+                # Click on login button
+                login_button = driver.find_element(By.CSS_SELECTOR, '#mc_login > form > button.continue.login_verify_btn')
+                login_button.click()
+                
+                # Explicitly click "Continue Without Credit Insights"
+                continue_without_credit_score_button = WebDriverWait(driver, 20).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_login > form > button.get_otp_signup.without_insights_btn'))
+                )
+                continue_without_credit_score_button.click()
+                
+                # Sleep for 4 seconds after clicking the button
+                time.sleep(4)
+                logger.info("Successfully logged in to MoneyControl")
+                
+                # Switch back to default content
+                driver.switch_to.default_content()
+                
+                # Navigate to target URL if provided
+                if target_url:
+                    logger.info(f"Opening page: {target_url}")
+                    driver.get(target_url)
+                    time.sleep(2)
+                
+                return True
             
-            email_input.send_keys(username)
-            password_input.send_keys(password)
-            
-            # Click on login button
-            login_button = driver.find_element(By.CSS_SELECTOR, '#mc_login > form > button.continue.login_verify_btn')
-            login_button.click()
-            
-            # Explicitly click "Continue Without Credit Insights"
-            continue_without_credit_score_button = WebDriverWait(driver, 20).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, '#mc_login > form > button.get_otp_signup.without_insights_btn'))
-            )
-            continue_without_credit_score_button.click()
-            
-            # Sleep for 4 seconds after clicking the button
-            time.sleep(4)
-            logger.info("Successfully logged in to MoneyControl")
-            return True
-        except Exception as e:
-            logger.error(f"Error during login frame interaction: {str(e)}")
-            return False
+            except Exception as e:
+                logger.error(f"Login attempt {attempt+1} failed: {str(e)}")
+                
+                # Switch back to the default content
+                try:
+                    driver.switch_to.default_content()
+                except:
+                    pass
+                
+                # If not the last attempt, try removing ads again and retry
+                if attempt < max_login_attempts - 1:
+                    logger.info("Removing ads and retrying login...")
+                    remove_ad_overlays()
+                    time.sleep(2)
+                else:
+                    logger.error("All login attempts failed.")
+                    return False
+        
+        return False
             
     except Exception as e:
         logger.error(f"Error during login: {str(e)}")

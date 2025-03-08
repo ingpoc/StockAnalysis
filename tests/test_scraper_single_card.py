@@ -80,6 +80,15 @@ EXPECTED_METRICS = {
     "report_type": "Standalone"
 }
 
+# Helper function to check if a string is a valid ISO datetime format
+def is_valid_iso_datetime(timestamp_str):
+    """Check if a string is a valid ISO format datetime."""
+    try:
+        datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
 class FirstCardOnlyScraper:
     """
     Custom scraper that only processes the first card.
@@ -123,7 +132,7 @@ class FirstCardOnlyScraper:
                 driver = setup_webdriver()
                 
                 try:
-                    # Login to MoneyControl
+                    # Login to MoneyControl with ad handling
                     login_success = login_to_moneycontrol(driver, target_url=url)
                     if not login_success:
                         logger.error("Failed to login to MoneyControl")
@@ -325,9 +334,9 @@ def validate_db_structure(data: Dict[str, Any]) -> Dict[str, Any]:
         result["valid"] = False
         result["errors"].append("symbol must be a string")
     
-    if "timestamp" in data and not isinstance(data["timestamp"], datetime):
+    if "timestamp" in data and not (isinstance(data["timestamp"], datetime) or (isinstance(data["timestamp"], str) and is_valid_iso_datetime(data["timestamp"]))):
         result["valid"] = False
-        result["errors"].append("timestamp must be a datetime object")
+        result["errors"].append("timestamp must be a datetime object or valid ISO format string")
     
     return result
 

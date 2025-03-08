@@ -74,6 +74,14 @@ async def scrape_data(request: ScrapeRequest, collection: AsyncIOMotorCollection
             # Scrape by result type
             results = await scrape_by_result_type(request.result_type, collection)
         
+        # If no results but no error was raised, provide a helpful message
+        if not results:
+            return ScrapeResponse(
+                success=True,
+                message="Scraping completed, but no new companies were found or all companies were already in the database.",
+                companies_scraped=0
+            )
+        
         return ScrapeResponse(
             success=True,
             message=f"Successfully scraped {len(results)} companies",
@@ -81,9 +89,22 @@ async def scrape_data(request: ScrapeRequest, collection: AsyncIOMotorCollection
             data=results
         )
     except Exception as e:
+        error_message = str(e)
+        # Provide more user-friendly messages for common errors
+        if "chrome not reachable" in error_message.lower() or "no such window" in error_message.lower():
+            error_message = "Browser was closed during scraping. Please try again."
+        elif "invalid session id" in error_message.lower():
+            error_message = "Browser session was terminated. This usually happens when the browser is closed manually."
+        elif "timeout" in error_message.lower():
+            error_message = "Timeout waiting for page to load. Please check your internet connection and try again."
+        elif "connection" in error_message.lower():
+            error_message = "Network connection issue. Please check your internet connection and try again."
+        
+        logger.error(f"Scraping error: {str(e)}")
+        
         return ScrapeResponse(
             success=False,
-            message=f"Error scraping data: {str(e)}",
+            message=f"Error scraping data: {error_message}",
             companies_scraped=0
         )
 

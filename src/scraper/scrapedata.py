@@ -13,7 +13,13 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException, NoSuchElementException
+from selenium.common.exceptions import (
+    TimeoutException, 
+    WebDriverException, 
+    NoSuchElementException,
+    NoSuchWindowException,
+    InvalidSessionIdException
+)
 from motor.motor_asyncio import AsyncIOMotorCollection
 from dotenv import load_dotenv
 
@@ -60,7 +66,7 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
     driver = setup_webdriver()
     
     try:
-        # Login to MoneyControl
+        # Login to MoneyControl with ad handling
         login_success = login_to_moneycontrol(driver, target_url=url)
         if not login_success:
             logger.error("Failed to login to MoneyControl")
@@ -78,6 +84,14 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         # Scroll to load all results
         scroll_page(driver)
         
+        # Early check if browser is still open after scrolling
+        try:
+            # This will raise an exception if browser is closed
+            _ = driver.current_url
+        except (NoSuchWindowException, InvalidSessionIdException):
+            logger.error("Browser window was closed during scrolling. Scraping terminated.")
+            return results
+        
         # Parse the page content
         page_source = driver.page_source
         soup = BeautifulSoup(page_source, 'html.parser')
@@ -88,23 +102,47 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         logger.info(f"Found {len(result_cards)} result cards to process")
         
         # Process each result card
-        for card in result_cards:
+        for i, card in enumerate(result_cards):
             try:
+                # Check if browser is still alive before processing each card
+                try:
+                    _ = driver.current_url
+                except (NoSuchWindowException, InvalidSessionIdException):
+                    logger.error("Browser window was closed. Scraping terminated.")
+                    return results
+                
                 company_data = await process_result_card(card, driver, db_collection)
                 if company_data:
                     results.append(company_data)
+            except NoSuchWindowException:
+                logger.error("Browser window was closed. Scraping stopped.")
+                return results
+            except InvalidSessionIdException:
+                logger.error("Browser session was terminated. Scraping stopped.")
+                return results
             except Exception as e:
                 company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
                 logger.error(f"Error processing card for {company_name}: {str(e)}")
     
     except TimeoutException:
         logger.error("Timeout waiting for page to load")
+    except NoSuchWindowException:
+        logger.error("Browser window was closed by the user. Scraping terminated.")
+    except InvalidSessionIdException:
+        logger.error("Browser session was terminated. This usually happens when the browser is closed manually.")
     except WebDriverException as e:
-        logger.error(f"WebDriver error: {str(e)}")
+        if "chrome not reachable" in str(e).lower():
+            logger.error("Browser was closed or crashed. Scraping stopped.")
+        else:
+            logger.error(f"WebDriver error: {str(e)}")
     except Exception as e:
         logger.error(f"Unexpected error during scraping: {str(e)}")
     finally:
-        driver.quit()
+        try:
+            driver.quit()
+        except Exception:
+            # Silently handle errors when trying to quit an already closed browser
+            pass
         
     return results
 
@@ -139,7 +177,21 @@ async def process_result_card(card, driver, db_collection: Optional[AsyncIOMotor
     Returns:
         Dict[str, Any]: Financial data or None if processing failed.
     """
+    company_name = None
+    metrics_data = None
+    symbol = None
+    stock_link = None
+    financial_data = None
+    
     try:
+        # First check if browser is still active
+        try:
+            # A simple check that will raise an exception if browser is closed
+            _ = driver.current_url
+        except (NoSuchWindowException, InvalidSessionIdException):
+            logger.error("Browser window was closed. Cannot process result card.")
+            raise  # Re-raise to be caught by the caller
+            
         # Extract company name and link
         company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else None
         if not company_name:
@@ -174,60 +226,111 @@ async def process_result_card(card, driver, db_collection: Optional[AsyncIOMotor
                     logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
                     return None
         
+        # Handle any ads before scraping metrics
+        try:
+            # Check for and remove ad overlays
+            ad_iframes = driver.find_elements(By.CSS_SELECTOR, "iframe[id^='google_ads_iframe']")
+            if ad_iframes:
+                logger.info(f"Found {len(ad_iframes)} Google ad iframes before scraping {company_name}")
+                
+                # Try to close the ads using JavaScript
+                driver.execute_script("""
+                    // Remove Google ad iframes
+                    const adIframes = document.querySelectorAll('iframe[id^="google_ads_iframe"]');
+                    adIframes.forEach(iframe => {
+                        iframe.remove();
+                    });
+                    
+                    // Remove any overlay divs
+                    const overlays = document.querySelectorAll('div[class*="overlay"], div[id*="overlay"], .modal');
+                    overlays.forEach(overlay => {
+                        overlay.remove();
+                    });
+                """)
+                logger.info("Removed ad elements before scraping metrics")
+        except Exception as e:
+            logger.warning(f"Error handling ad overlays for {company_name}: {str(e)}")
+        
         # Get additional metrics from the company page
-        metrics_data, symbol = scrape_financial_metrics(driver, stock_link)
+        # This already opens a new tab, gets the data, and closes it
+        try:
+            # Check if browser is still active before opening new tab
+            _ = driver.current_url
+            metrics_data, symbol = scrape_financial_metrics(driver, stock_link)
+            
+            # Verify we got meaningful data - if not, consider it a failure
+            if not metrics_data or all(value is None for value in metrics_data.values()):
+                logger.warning(f"Failed to extract meaningful metrics data for {company_name}")
+                metrics_data = None
+        except (NoSuchWindowException, InvalidSessionIdException) as e:
+            logger.error(f"Browser window was closed while scraping metrics for {company_name}")
+            raise  # Re-raise to be caught by caller
+        except Exception as e:
+            logger.error(f"Error getting metrics data for {company_name}: {str(e)}")
+            metrics_data = None
         
-        # Open the stock page to get company info
-        driver.execute_script(f"window.open('{stock_link}', '_blank');")
-        driver.switch_to.window(driver.window_handles[-1])
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
-        
-        # Parse the page source
-        detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
-        company_info = extract_company_info(detailed_soup)
-        
-        # Close the tab and switch back to the main window
-        driver.close()
-        driver.switch_to.window(driver.window_handles[0])
-        
+        # If we don't have metrics data, consider this a failure and don't save
+        if metrics_data is None:
+            logger.warning(f"No metrics data collected for {company_name}. Skipping database storage.")
+            return None
+            
+        # Update financial data with metrics
         if metrics_data:
             financial_data.update(metrics_data)
             
-        # Process the data for storing in the database
-        processed_data = {
+        # Add financial data to the result
+        financial_metrics = [financial_data]
+        
+        # Create the company data object
+        company_data = {
             "company_name": company_name,
-            "symbol": symbol or "NA",
-            "financial_metrics": [financial_data],
-            "company_info": company_info,
-            "timestamp": datetime.utcnow()
+            "symbol": symbol or extract_symbol_from_card(card) or "",
+            "financial_metrics": financial_metrics,
+            "timestamp": datetime.utcnow()  # Ensure this is a datetime object
         }
         
-        # Store the data in the database if a collection is provided
+        # Final check if the browser is still active before saving to database
+        try:
+            # This will raise an exception if browser is closed
+            _ = driver.current_url
+        except (NoSuchWindowException, InvalidSessionIdException):
+            logger.error(f"Browser window was closed before saving data for {company_name}. Data not saved.")
+            return None
+            
+        # Only store data if we have successful scraping and browser is still active
         if db_collection is not None:
-            # Check for duplicates before storing
-            quarter = financial_data.get('quarter', '')
-            if quarter:
-                existing_entry = await db_collection.find_one({
-                    "company_name": company_name,
-                    "financial_metrics": {
-                        "$elemMatch": {
-                            "quarter": quarter
-                        }
-                    }
-                })
+            try:
+                # Check if company already exists in database
+                company_doc = await db_collection.find_one({"company_name": company_name})
                 
-                if existing_entry:
-                    logger.info(f"Skipping {company_name} for {quarter} - data already exists in database.")
-                    return None
-            
-            # Store if no duplicate found
-            await update_or_insert_financial_data(processed_data, db_collection)
-            
-        return processed_data
+                if company_doc:
+                    # Add new quarter data to existing company
+                    # Check if this quarter already exists (shouldn't happen due to earlier check, but just to be safe)
+                    existing_quarters = [metric.get("quarter", "") for metric in company_doc.get("financial_metrics", [])]
+                    quarter = financial_data.get('quarter', '')
+                    
+                    if quarter and quarter not in existing_quarters:
+                        logger.info(f"Adding new quarter {quarter} to {company_name}")
+                        await db_collection.update_one(
+                            {"company_name": company_name},
+                            {"$push": {"financial_metrics": financial_data}}
+                        )
+                else:
+                    # Insert new company document
+                    await db_collection.insert_one(company_data)
+                    logger.info(f"Added {company_name} with {len(financial_metrics)} quarters")
+            except Exception as e:
+                logger.error(f"Error storing data for {company_name}: {str(e)}")
         
+        return company_data
+    except NoSuchWindowException as e:
+        logger.error(f"Browser window was closed during processing of {company_name if company_name else 'unknown stock'}")
+        raise  # Re-raise to be caught by the caller
+    except InvalidSessionIdException as e:
+        logger.error(f"Browser session was terminated during processing of {company_name if company_name else 'unknown stock'}")
+        raise  # Re-raise to be caught by the caller
     except Exception as e:
-        company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
-        logger.error(f"Error processing {company_name}: {str(e)}")
+        logger.error(f"Error processing {company_name if company_name else 'unknown stock'}: {str(e)}")
         return None
 
 async def scrape_single_stock(driver: webdriver.Chrome, url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
@@ -392,7 +495,7 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                                         "company_name": company_name,
                                         "symbol": extract_symbol_from_card(entry) or "",
                                         "financial_metrics": [financial_data],
-                                        "timestamp": datetime.now()
+                                        "timestamp": datetime.utcnow()
                                     }
                                     
                                     # Store in database if provided
@@ -455,7 +558,7 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                         "company_name": company_name,
                         "symbol": extract_symbol_from_card(card) or "",
                         "financial_metrics": [financial_data],
-                        "timestamp": datetime.now()
+                        "timestamp": datetime.utcnow()
                     }
                     
                     # Store in database if provided
