@@ -1,16 +1,66 @@
 # Python-generated files
 __pycache__/
-*.py[oc]
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
 wheels/
-*.egg-info
+*.egg-info/
+.installed.cfg
+*.egg
 .python-version
 app.log
 uv.lock
 
 # Virtual environments
-.venv
+.venv/
+env/
+venv/
+ENV/
 
+# Environment variables
 .env
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Logs and debugging
+logs/*.log
+logs/*.png
+logs/*.html
+logs/*.json
+*.log
+page_source.html
+debug_screenshot.png
+chromedriver.log
+
+# Database backups (keep only recent ones)
+db_backups/*
+!db_backups/.gitkeep
+
+# Browser automation artifacts
+.selenium/
+chromedriver*
+geckodriver*
+
+# Test artifacts
+tests/*.log
+tests/__pycache__/
+
+# OS specific files
+.DS_Store
+Thumbs.db
 

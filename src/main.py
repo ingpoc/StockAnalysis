@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.api import router
+from src.api.registry import API_DOCUMENTATION
 from src.utils.database import connect_to_mongodb, close_mongodb_connection, ensure_indexes
 from src.config import settings
 import logging
@@ -38,3 +39,15 @@ async def shutdown_db_client():
 @app.get("/")
 async def root():
     return {"message": "Welcome to Stock Analysis API"}
+
+@app.get("/api/documentation")
+async def api_documentation():
+    """
+    Get a structured documentation of all available API endpoints.
+    This endpoint serves as a single source of truth for the API structure.
+    """
+    return {
+        "documentation": API_DOCUMENTATION,
+        "endpoint_count": sum(len(endpoints) for endpoints in API_DOCUMENTATION.values()),
+        "categories": list(API_DOCUMENTATION.keys())
+    }

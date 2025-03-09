@@ -5,6 +5,10 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorCollection
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 from src.scraper import (
     scrape_moneycontrol_earnings,
@@ -12,9 +16,10 @@ from src.scraper import (
     scrape_custom_url,
     get_db_collection
 )
+from src.scraper.db_operations import remove_quarter_from_all_companies
 
 router = APIRouter(
-    prefix="/scraper",
+    prefix="",
     tags=["scraper"],
     responses={404: {"description": "Not found"}},
 )
@@ -121,16 +126,26 @@ async def remove_quarter(request: RemoveQuarterRequest, collection: AsyncIOMotor
         RemoveQuarterResponse: Remove quarter response.
     """
     try:
-        from src.scraper import remove_quarter_from_all_companies
+        logger.info(f"Attempting to remove quarter: {request.quarter}")
         
         documents_updated = await remove_quarter_from_all_companies(request.quarter, collection)
         
-        return RemoveQuarterResponse(
-            success=True,
-            message=f"Successfully removed quarter {request.quarter} from {documents_updated} documents",
-            documents_updated=documents_updated
-        )
+        if documents_updated > 0:
+            logger.info(f"Successfully removed quarter {request.quarter} from {documents_updated} documents")
+            return RemoveQuarterResponse(
+                success=True,
+                message=f"Successfully removed quarter {request.quarter} from {documents_updated} documents",
+                documents_updated=documents_updated
+            )
+        else:
+            logger.warning(f"No documents were updated when removing quarter {request.quarter}")
+            return RemoveQuarterResponse(
+                success=True,
+                message=f"No documents were found with quarter {request.quarter}",
+                documents_updated=0
+            )
     except Exception as e:
+        logger.error(f"Error removing quarter {request.quarter}: {str(e)}")
         return RemoveQuarterResponse(
             success=False,
             message=f"Error removing quarter: {str(e)}",
