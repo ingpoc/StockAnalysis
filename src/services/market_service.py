@@ -5,6 +5,9 @@ from src.utils.cache import cache_with_ttl
 from src.utils.database import get_database
 import logging
 from bson import ObjectId
+import asyncio
+import time
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +15,39 @@ class MarketService:
     def __init__(self):
         self._cache = {}
         self._db = None
+        self._last_modified = {}  # Keep track of when data was last modified
+        self._cache_invalidation_timestamps = {}  # Timestamps for cache invalidation
 
     async def get_db(self):
         if self._db is None:
             self._db = await get_database()
         return self._db
+
+    # Helper method for resilient database operations
+    async def _execute_with_retry(self, operation, max_retries=3, retry_delay=1):
+        """Execute a database operation with retries on failure"""
+        attempt = 0
+        last_error = None
+        
+        while attempt < max_retries:
+            try:
+                # Try to get a fresh database connection on retries
+                if attempt > 0:
+                    logger.info(f"Retry attempt {attempt} for database operation")
+                    self._db = None  # Force a new connection on next get_db call
+                
+                return await operation()
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Database operation failed (attempt {attempt+1}/{max_retries}): {str(e)}")
+                attempt += 1
+                if attempt < max_retries:
+                    # Wait before retrying, with some jitter
+                    await asyncio.sleep(retry_delay * (1 + (attempt * 0.1)))
+        
+        # If we get here, all retries failed
+        logger.error(f"All {max_retries} retry attempts failed for database operation: {str(last_error)}")
+        raise last_error
 
     def _extract_latest_metrics(self, stock: Dict[str, Any], quarter: Optional[str] = None) -> Dict[str, Any]:
         """Extract and process latest metrics from a stock document"""
@@ -129,10 +160,57 @@ class MarketService:
             logger.error(f"Error in batch stock details: {str(e)}")
             raise Exception(f"Failed to fetch batch stock details: {str(e)}")
 
-    @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
+    def invalidate_market_data_cache(self, quarter: Optional[str] = None):
+        """
+        Invalidate the market data cache for a specific quarter or all quarters.
+        This should be called when new data is added to the database.
+        """
+        timestamp = time.time()
+        
+        if quarter:
+            # Invalidate cache for specific quarter
+            key = f"market_data_{quarter}"
+            self._cache_invalidation_timestamps[key] = timestamp
+            if key in self._cache:
+                del self._cache[key]
+            logger.info(f"Invalidated cache for quarter: {quarter}")
+        else:
+            # Invalidate cache for all quarters
+            for key in list(self._cache.keys()):
+                if key.startswith("market_data_"):
+                    del self._cache[key]
+                    self._cache_invalidation_timestamps[key] = timestamp
+            logger.info("Invalidated all market data cache")
+
     async def get_market_data(self, quarter: Optional[str] = None, force_refresh: bool = False) -> MarketOverview:
         """Get market overview data with optional quarter filter"""
-        try:
+        # Create a cache key based on quarter
+        cache_key = f"market_data_{quarter if quarter else 'all'}"
+        current_time = time.time()
+        
+        # Check if we need to refresh the cache
+        cache_invalid = False
+        if force_refresh:
+            cache_invalid = True
+            logger.info(f"Force refresh requested for {cache_key}")
+        elif cache_key in self._cache_invalidation_timestamps:
+            # Check if the cache was invalidated after our cached data was created
+            if cache_key not in self._cache or self._cache_invalidation_timestamps[cache_key] > self._cache.get(f"{cache_key}_timestamp", 0):
+                cache_invalid = True
+                logger.info(f"Cache invalidated for {cache_key}")
+        
+        # If valid cached data exists and no forced refresh, return it
+        if not cache_invalid and cache_key in self._cache:
+            # Check if cache is still valid (less than 1 hour old)
+            timestamp = self._cache.get(f"{cache_key}_timestamp", 0)
+            if current_time - timestamp < 3600:  # 1 hour TTL
+                logger.info(f"Returning cached data for {cache_key}")
+                return self._cache[cache_key]
+            else:
+                logger.info(f"Cache expired for {cache_key}")
+        
+        # Cache miss or invalid - fetch from database
+        async def fetch_market_data():
             db = await self.get_db()
             
             # Base query
@@ -140,8 +218,8 @@ class MarketService:
             if quarter:
                 query["financial_metrics.quarter"] = quarter
 
-            # Get all stocks
-            cursor = db.detailed_financials.find(query)
+            # Get all stocks with a timeout to avoid long-running queries
+            cursor = db.detailed_financials.find(query, max_time_ms=10000)
             stocks = []
             async for stock in cursor:
                 processed_stock = self._extract_latest_metrics(stock, quarter)
@@ -149,6 +227,7 @@ class MarketService:
                     stocks.append(processed_stock)
 
             if not stocks:
+                logger.warning(f"No stocks found for query: {query}")
                 return MarketOverview(
                     top_performers=[],
                     worst_performers=[],
@@ -188,16 +267,33 @@ class MarketService:
                 reverse=True
             )
 
-            return MarketOverview(
+            result = MarketOverview(
                 top_performers=sorted_stocks[:10],
                 worst_performers=sorted_stocks[-10:],
                 latest_results=latest_results[:10],
                 all_stocks=stocks
             )
-
+            
+            # Update cache
+            self._cache[cache_key] = result
+            self._cache[f"{cache_key}_timestamp"] = current_time
+            logger.info(f"Updated cache for {cache_key} with {len(stocks)} stocks")
+            
+            return result
+        
+        try:
+            # Execute the database operation with retry logic
+            return await self._execute_with_retry(fetch_market_data)
         except Exception as e:
             logger.error(f"Error fetching market data: {str(e)}")
-            raise Exception(f"Failed to fetch market data: {str(e)}")
+            # Return empty data structure instead of raising an exception
+            # to ensure the UI has something to display
+            return MarketOverview(
+                top_performers=[],
+                worst_performers=[],
+                latest_results=[],
+                all_stocks=[]
+            )
 
     @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_available_quarters(self, force_refresh: bool = False) -> List[str]:

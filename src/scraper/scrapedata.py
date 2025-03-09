@@ -36,7 +36,7 @@ from src.scraper.extract_metrics import (
 )
 from src.scraper.db_operations import (
     store_financial_data,
-    update_or_insert_financial_data
+    update_or_insert_company_data
 )
 
 # Import the centralized logger
@@ -369,13 +369,10 @@ async def process_result_card(card, driver, db_collection: Optional[AsyncIOMotor
                     
                     if quarter and quarter not in existing_quarters:
                         logger.info(f"Adding new quarter {quarter} to {company_name}")
-                        await db_collection.update_one(
-                            {"company_name": company_name},
-                            {"$push": {"financial_metrics": financial_data}}
-                        )
+                        await update_or_insert_company_data(company_name, quarter, financial_data, db_collection)
                 else:
                     # Insert new company document
-                    await db_collection.insert_one(company_data)
+                    await update_or_insert_company_data(company_data['company_name'], company_data['quarter'], company_data, db_collection)
                     logger.info(f"Added {company_name} with {len(financial_metrics)} quarters")
             except Exception as e:
                 logger.error(f"Error storing data for {company_name}: {str(e)}")
@@ -445,7 +442,7 @@ async def scrape_single_stock(driver: webdriver.Chrome, url: str, db_collection:
         # Store in database if provided
         if db_collection:
             logger.info(f"Storing financial data for {company_name} ({symbol}) in database")
-            await db_collection.insert_one(financial_data)
+            await update_or_insert_company_data(company_name, processed_metrics[0]['quarter'], financial_data, db_collection)
         
         logger.info(f"Successfully scraped financial data for {company_name} ({symbol})")
         return financial_data
@@ -575,7 +572,7 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                                                 continue
                                         
                                         # Store if no duplicate found
-                                        await update_or_insert_financial_data(company_data, db_collection)
+                                        await update_or_insert_company_data(company_name, quarter, company_data, db_collection)
                                     
                                     results.append(company_data)
                                     
@@ -638,7 +635,7 @@ async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collecti
                                 continue
                         
                         # Store if no duplicate found
-                        await update_or_insert_financial_data(company_data, db_collection)
+                        await update_or_insert_company_data(company_name, quarter, company_data, db_collection)
                     
                     results.append(company_data)
                     
@@ -988,14 +985,14 @@ async def scrape_estimates_vs_actuals(url: str, db_collection: Optional[AsyncIOM
 
 async def process_estimate_card(card, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
     """
-    Process an estimate card and extract data.
+    Process an estimate card to extract financial data.
     
     Args:
-        card: Selenium WebElement representing an estimate card.
+        card: HTML element containing the estimate card.
         db_collection (AsyncIOMotorCollection, optional): MongoDB collection to store data.
         
     Returns:
-        Dict[str, Any]: Estimate data or None if processing failed.
+        Dict[str, Any]: Financial data dictionary or None if processing failed.
     """
     try:
         # Updated selectors
@@ -1055,56 +1052,6 @@ async def process_estimate_card(card, db_collection: Optional[AsyncIOMotorCollec
     except Exception as e:
         logger.error(f"Error processing estimate card: {str(e)}")
         return None
-
-async def update_or_insert_company_data(company_name: str, quarter: str, financial_data: Dict[str, Any], 
-                                  collection: AsyncIOMotorCollection) -> bool:
-    """
-    Update existing company data or insert new data.
-    
-    Args:
-        company_name (str): Name of the company.
-        quarter (str): Quarter information.
-        financial_data (Dict[str, Any]): Financial data to store.
-        collection (AsyncIOMotorCollection): MongoDB collection.
-        
-    Returns:
-        bool: True if successful, False otherwise.
-    """
-    try:
-        existing_company = await collection.find_one({"company_name": company_name})
-        
-        if existing_company:
-            existing_quarters = [metric['quarter'] for metric in existing_company['financial_metrics']]
-            
-            if quarter in existing_quarters:
-                # Update the estimates for the existing quarter
-                await collection.update_one(
-                    {"company_name": company_name, "financial_metrics.quarter": quarter},
-                    {"$set": {"financial_metrics.$.estimates": financial_data['estimates']}}
-                )
-                logger.info(f"Updated estimates for {company_name} - {quarter}")
-            else:
-                # Add new quarter data
-                await collection.update_one(
-                    {"company_name": company_name},
-                    {"$push": {"financial_metrics": financial_data}}
-                )
-                logger.info(f"Added new quarter data for {company_name} - {quarter}")
-        else:
-            # Create new company entry
-            new_company = {
-                "company_name": company_name,
-                "symbol": "NA",
-                "financial_metrics": [financial_data],
-                "timestamp": datetime.utcnow()
-            }
-            await collection.insert_one(new_company)
-            logger.info(f"Created new entry for {company_name}")
-            
-        return True
-    except Exception as e:
-        logger.error(f"Error updating or inserting company data for {company_name}: {str(e)}")
-        return False
 
 async def scrape_custom_url(url: str, scrape_type: str = "earnings", db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
     """

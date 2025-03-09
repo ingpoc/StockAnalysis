@@ -2,12 +2,15 @@
 Router for scraper functionality.
 """
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, status, Depends, HTTPException
+from fastapi import APIRouter, status, Depends, HTTPException, BackgroundTasks
+from motor.motor_asyncio import AsyncIOMotorClient
 
 from src.schemas.financial_data import ScrapeRequest, ScrapeResponse, CompanyFinancials
 from src.scraper.moneycontrol_scraper import scrape_moneycontrol_earnings, get_company_financials
-from src.utils.database import get_database, refresh_database_connection
+from src.utils.database import get_database, refresh_database_connection, MONGO_URI
+from src.config.settings import get_settings
 
 # Create logger
 logger = logging.getLogger(__name__)
@@ -17,25 +20,25 @@ router = APIRouter(
     tags=["scraper"]
 )
 
-@router.post("/scrape", response_model=ScrapeResponse, status_code=status.HTTP_200_OK)
-async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
+# Background task for scraping
+async def background_scrape(request: ScrapeRequest, db_instance=None):
     """
-    Scrape financial data from MoneyControl earnings page.
+    Background task to perform scraping without blocking the API response.
     
     Args:
         request (ScrapeRequest): Request with URL and result type.
-        db: MongoDB database dependency.
-        
-    Returns:
-        ScrapeResponse: Response with success status and scraped data.
+        db_instance: MongoDB database (optional, will create a new connection if None).
     """
     try:
-        logger.info(f"Received scraping request with result_type: {request.result_type}")
+        logger.info(f"Starting background scraping for result_type: {request.result_type}")
         
-        # Refresh the database connection if requested
-        if request.refresh_connection:
-            logger.info("Refreshing database connection before scraping")
-            db = await refresh_database_connection()
+        # Create a dedicated database connection for the background task
+        # to avoid interfering with other operations
+        settings = get_settings()
+        mongo_client = AsyncIOMotorClient(MONGO_URI)
+        db = mongo_client[settings.mongodb_database]
+        
+        logger.info("Created dedicated database connection for background scraping")
         
         # Get the company financials collection
         companies_collection = db.detailed_financials
@@ -88,42 +91,82 @@ async def scrape_moneycontrol(request: ScrapeRequest, db=Depends(get_database)):
             # Unknown result type and no URL provided
             error_message = f"Unknown result type '{request.result_type}' and no URL provided"
             logger.error(error_message)
-            return ScrapeResponse(
-                success=False,
-                message=error_message,
-                companies_scraped=0,
-                data=None
-            )
+            return
         
         # Log the URL being scraped
-        logger.info(f"Scraping URL: {url_to_scrape} ({result_name})")
+        logger.info(f"Background scraping URL: {url_to_scrape} ({result_name})")
+        
+        # Add a small delay to ensure this doesn't immediately block other operations
+        await asyncio.sleep(1)
         
         # Perform the scraping
         scraped_results = await scrape_moneycontrol_earnings(url_to_scrape, companies_collection)
         
         if not scraped_results:
-            logger.warning(f"No data scraped from {result_name}")
-            return ScrapeResponse(
-                success=False,
-                message=f"No data found or error scraping {result_name}",
-                companies_scraped=0,
-                data=None
-            )
+            logger.warning(f"No data scraped from {result_name} in background task")
+            return
         
         # Process the scraped data
         companies_count = len(scraped_results)
-        logger.info(f"Successfully scraped {companies_count} companies from {result_name}")
+        logger.info(f"Successfully scraped {companies_count} companies from {result_name} in background task")
         
-        # Create response with data
+        # Close the database connection
+        mongo_client.close()
+        logger.info("Closed dedicated database connection for background scraping")
+        
+    except Exception as e:
+        error_message = f"Error during background scraping: {str(e)}"
+        logger.error(error_message)
+        # Try to close the database connection in case of error
+        try:
+            if 'mongo_client' in locals():
+                mongo_client.close()
+                logger.info("Closed database connection after error")
+        except:
+            pass
+
+@router.post("/scrape", response_model=ScrapeResponse, status_code=status.HTTP_200_OK)
+async def scrape_moneycontrol(request: ScrapeRequest, background_tasks: BackgroundTasks, db=Depends(get_database)):
+    """
+    Trigger the scraping process in the background and immediately return a response.
+    
+    Args:
+        request (ScrapeRequest): Request with URL and result type.
+        background_tasks: FastAPI BackgroundTasks to run the scraping asynchronously.
+        db: MongoDB database dependency.
+        
+    Returns:
+        ScrapeResponse: Response with success status.
+    """
+    try:
+        logger.info(f"Received scraping request with result_type: {request.result_type}")
+        
+        # Determine result name for the response
+        result_name = "Custom Scrape"
+        if request.result_type in ["LR", "BP", "WP", "PT", "NT"]:
+            result_type_mapping = {
+                "LR": "Latest Results",
+                "BP": "Best Performer",
+                "WP": "Worst Performer",
+                "PT": "Positive Turnaround",
+                "NT": "Negative Turnaround"
+            }
+            result_name = result_type_mapping.get(request.result_type, "Custom Scrape")
+        
+        # Add the scraping task to background tasks - don't pass the database instance
+        # since the background task will create its own connection
+        background_tasks.add_task(background_scrape, request)
+        
+        # Return an immediate response
         return ScrapeResponse(
             success=True,
-            message=f"Successfully scraped {companies_count} companies from {result_name}",
-            companies_scraped=companies_count,
-            data=scraped_results
+            message=f"Scraping process for {result_name} started in the background",
+            companies_scraped=0,
+            data=None
         )
     
     except Exception as e:
-        error_message = f"Error during scraping: {str(e)}"
+        error_message = f"Error starting scraping process: {str(e)}"
         logger.error(error_message)
         return ScrapeResponse(
             success=False,
