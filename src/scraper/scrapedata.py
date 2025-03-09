@@ -890,10 +890,10 @@ async def scrape_by_result_type(result_type: str, db_collection: Optional[AsyncI
     """
     url_types = {
         "LR": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=LR&subType=yoy",
-        "BP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/best-performers/",
-        "WP": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/worst-performers/",
-        "PT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/positive-trend/",
-        "NT": "https://www.moneycontrol.com/stocks/marketstats/results-calendar/negative-trend/"
+        "BP": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=BP&subType=yoy",
+        "WP": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=WP&subType=yoy",
+        "PT": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=PT&subType=yoy",
+        "NT": "https://www.moneycontrol.com/markets/earnings/latest-results/?tab=NT&subType=yoy"
     }
     
     if result_type not in url_types:
