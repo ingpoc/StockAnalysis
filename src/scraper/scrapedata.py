@@ -64,6 +64,9 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
     """
     results = []
     driver = setup_webdriver()
+    last_card_count = 0
+    no_new_content_count = 0
+    max_no_new_content = 3  # Stop after 3 attempts with no new content
     
     try:
         # Login to MoneyControl with ad handling
@@ -81,48 +84,67 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         )
         logger.info("Page opened successfully")
         
-        # Scroll to load all results
-        scroll_page(driver)
-        
-        # Early check if browser is still open after scrolling
-        try:
-            # This will raise an exception if browser is closed
-            _ = driver.current_url
-        except (NoSuchWindowException, InvalidSessionIdException):
-            logger.error("Browser window was closed during scrolling. Scraping terminated.")
-            return results
-        
-        # Parse the page content
-        page_source = driver.page_source
-        soup = BeautifulSoup(page_source, 'html.parser')
-        
-        # Updated selector based on debug results
-        result_cards = soup.select('#latestRes > div > ul > li')
-        
-        logger.info(f"Found {len(result_cards)} result cards to process")
-        
-        # Process each result card
-        for i, card in enumerate(result_cards):
+        # Process cards incrementally while scrolling
+        while True:
+            # Early check if browser is still open
             try:
-                # Check if browser is still alive before processing each card
-                try:
-                    _ = driver.current_url
-                except (NoSuchWindowException, InvalidSessionIdException):
-                    logger.error("Browser window was closed. Scraping terminated.")
-                    return results
+                # This will raise an exception if browser is closed
+                _ = driver.current_url
+            except (NoSuchWindowException, InvalidSessionIdException):
+                logger.error("Browser window was closed during scrolling. Scraping terminated.")
+                break
+            
+            # Find all current result cards
+            result_cards = driver.find_elements(By.CSS_SELECTOR, '#latestRes > div > ul > li')
+            current_card_count = len(result_cards)
+            
+            # Check if we have new cards
+            if current_card_count == last_card_count:
+                no_new_content_count += 1
+                if no_new_content_count >= max_no_new_content:
+                    logger.info(f"No new content after {max_no_new_content} scrolls. Ending scrape.")
+                    break
+            else:
+                no_new_content_count = 0
+                # Process only the new cards
+                new_cards = result_cards[last_card_count:current_card_count]
+                logger.info(f"Processing {len(new_cards)} new cards (total: {current_card_count})")
                 
-                company_data = await process_result_card(card, driver, db_collection)
-                if company_data:
-                    results.append(company_data)
-            except NoSuchWindowException:
-                logger.error("Browser window was closed. Scraping stopped.")
-                return results
-            except InvalidSessionIdException:
-                logger.error("Browser session was terminated. Scraping stopped.")
-                return results
-            except Exception as e:
-                company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
-                logger.error(f"Error processing card for {company_name}: {str(e)}")
+                # Convert HTML elements to BeautifulSoup objects for processing
+                page_source = driver.page_source
+                soup = BeautifulSoup(page_source, 'html.parser')
+                soup_cards = soup.select('#latestRes > div > ul > li')
+                
+                # Process each new card
+                for i, card in enumerate(soup_cards[last_card_count:current_card_count]):
+                    try:
+                        # Check if browser is still alive before processing each card
+                        try:
+                            _ = driver.current_url
+                        except (NoSuchWindowException, InvalidSessionIdException):
+                            logger.error("Browser window was closed. Scraping terminated.")
+                            return results
+                        
+                        company_data = await process_result_card(card, driver, db_collection)
+                        if company_data:
+                            results.append(company_data)
+                    except NoSuchWindowException:
+                        logger.error("Browser window was closed. Scraping stopped.")
+                        return results
+                    except InvalidSessionIdException:
+                        logger.error("Browser session was terminated. Scraping stopped.")
+                        return results
+                    except Exception as e:
+                        company_name = card.select_one('h3 a').text.strip() if card.select_one('h3 a') else "Unknown Company"
+                        logger.error(f"Error processing card for {company_name}: {str(e)}")
+            
+            # Update last_card_count for the next iteration
+            last_card_count = current_card_count
+            
+            # Scroll to the last card to load more
+            if result_cards:
+                driver.execute_script("arguments[0].scrollIntoView();", result_cards[-1])
+                time.sleep(2)  # Wait for new content to load
     
     except TimeoutException:
         logger.error("Timeout waiting for page to load")
@@ -146,24 +168,60 @@ async def scrape_moneycontrol_earnings(url: str, db_collection: Optional[AsyncIO
         
     return results
 
-def scroll_page(driver):
+def scroll_page(driver, selector='', max_no_new_content=3, sleep_time=2):
     """
-    Scroll the page to load all content.
+    Scroll the page incrementally to load all content.
     
     Args:
         driver (webdriver.Chrome): WebDriver instance.
-    """
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    
-    while True:
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(2)
+        selector (str): CSS selector for elements to scroll to. If empty, scrolls by page height.
+        max_no_new_content (int): Maximum number of attempts with no new content before stopping.
+        sleep_time (int): Seconds to wait after each scroll to allow content to load.
         
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            break
+    Returns:
+        int: Total number of elements found (if selector provided).
+    """
+    if not selector:
+        # Traditional scroll by page height if no selector provided
+        last_height = driver.execute_script("return document.body.scrollHeight")
+        
+        while True:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(sleep_time)
             
-        last_height = new_height
+            new_height = driver.execute_script("return document.body.scrollHeight")
+            if new_height == last_height:
+                break
+                
+            last_height = new_height
+        return 0
+    else:
+        # Incremental scroll by elements if selector provided
+        last_element_count = 0
+        no_new_content_count = 0
+        
+        while True:
+            # Find all elements with the given selector
+            elements = driver.find_elements(By.CSS_SELECTOR, selector)
+            
+            # Check if we have new elements
+            if len(elements) == last_element_count:
+                no_new_content_count += 1
+                if no_new_content_count >= max_no_new_content:
+                    logger.info(f"No new content after {max_no_new_content} scrolls. Ending scroll.")
+                    break
+            else:
+                no_new_content_count = 0
+            
+            last_element_count = len(elements)
+            logger.info(f"Found {last_element_count} elements so far")
+            
+            # Scroll to the last element to load more
+            if elements:
+                driver.execute_script("arguments[0].scrollIntoView();", elements[-1])
+                time.sleep(sleep_time)  # Wait for new content to load
+                
+        return last_element_count
 
 async def process_result_card(card, driver, db_collection: Optional[AsyncIOMotorCollection] = None) -> Optional[Dict[str, Any]]:
     """
@@ -859,6 +917,8 @@ async def scrape_estimates_vs_actuals(url: str, db_collection: Optional[AsyncIOM
     results = []
     driver = setup_webdriver()
     last_card_count = 0
+    no_new_content_count = 0
+    max_no_new_content = 3
     
     try:
         # Login to MoneyControl
@@ -876,39 +936,47 @@ async def scrape_estimates_vs_actuals(url: str, db_collection: Optional[AsyncIOM
         )
         logger.info("Page opened successfully")
         
-        no_new_content_count = 0
-        max_no_new_content = 3
-        
+        # Process cards incrementally while scrolling
         while True:
-            # Find all estimate cards - updated selector
+            # Early check if browser is still open
+            try:
+                # This will raise an exception if browser is closed
+                _ = driver.current_url
+            except (NoSuchWindowException, InvalidSessionIdException):
+                logger.error("Browser window was closed during scrolling. Scraping terminated.")
+                break
+            
+            # Find all current estimate cards
             estimate_cards = driver.find_elements(By.CSS_SELECTOR, '#estVsAct > div > ul > li')
+            current_card_count = len(estimate_cards)
             
             # Check if we have new cards
-            if len(estimate_cards) == last_card_count:
+            if current_card_count == last_card_count:
                 no_new_content_count += 1
                 if no_new_content_count >= max_no_new_content:
                     logger.info(f"No new content after {max_no_new_content} scrolls. Ending scrape.")
                     break
             else:
                 no_new_content_count = 0
+                # Process only the new cards
+                new_cards = estimate_cards[last_card_count:current_card_count]
+                logger.info(f"Processing {len(new_cards)} new estimate cards (total: {current_card_count})")
+                
+                # Process each new card
+                for card in new_cards:
+                    try:
+                        data = await process_estimate_card(card, db_collection)
+                        if data:
+                            results.append(data)
+                    except Exception as e:
+                        logger.error(f"Error processing estimate card: {str(e)}")
             
-            # Process new cards
-            for card in estimate_cards[last_card_count:]:
-                try:
-                    data = await process_estimate_card(card, db_collection)
-                    if data:
-                        results.append(data)
-                except Exception as e:
-                    logger.error(f"Error processing estimate card: {str(e)}")
-            
-            last_card_count = len(estimate_cards)
+            last_card_count = current_card_count
             
             # Scroll to the last card to load more
             if estimate_cards:
                 driver.execute_script("arguments[0].scrollIntoView();", estimate_cards[-1])
-                time.sleep(1)
-                
-            logger.info(f"Processed {last_card_count} estimate cards so far.")
+                time.sleep(1)  # Wait for new content to load
     
     except Exception as e:
         logger.error(f"Error during estimates scraping: {str(e)}")
