@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from src.models.schemas import MarketOverview, StockResponse, StockData
-from src.utils.cache import cache_with_ttl
+from src.utils.cache import cache_with_ttl, clear_cache_with_prefix
 from src.utils.database import get_database
 import logging
 from bson import ObjectId
@@ -205,11 +205,8 @@ class MarketService:
         try:
             # If force_refresh is True, invalidate the cache for this function
             if force_refresh:
-                # Get the cache key for this function
-                cache_key = f"cache_get_available_quarters_{{}}"
-                # Clear the cache for this function
-                if cache_key in self._cache:
-                    del self._cache[cache_key]
+                # Use the clear_cache_with_prefix function to properly invalidate cache
+                clear_cache_with_prefix("get_available_quarters")
                 logger.info("Forced refresh of available quarters cache")
             
             db = await self.get_db()

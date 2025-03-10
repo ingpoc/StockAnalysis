@@ -362,3 +362,87 @@ curl -X GET http://localhost:8000/api/v1/portfolio/holdings | json_pp
 
 This approach complements the `test_endpoints.py` script by providing a more flexible way to test specific aspects of endpoints during development or debugging.
 
+## Cache Management and Invalidation
+
+### Cache System Overview
+
+The application uses an in-memory caching system with TTL (Time-To-Live) to improve performance by reducing database load for frequently accessed data:
+
+- Cache implementation is in `src/utils/cache.py`
+- Cache entries have configurable TTL values (default: 300 seconds, quarters cache: 3600 seconds)
+- Cache keys are based on function name, arguments, and keyword arguments
+
+### Cache Invalidation Strategy
+
+The cache invalidation system follows these strategies:
+
+1. **Parameter-based Invalidation**:
+   - Most endpoints accept a `force_refresh` parameter that bypasses the cache when set to `true`
+   - Example: `GET /api/v1/quarters?force_refresh=true`
+
+2. **Prefix-based Invalidation**:
+   - The `clear_cache_with_prefix()` function clears all cache entries that start with a given prefix
+   - Used to invalidate related caches when data changes affect multiple endpoints
+   - Example: When removing a quarter, both quarters and market data caches are invalidated
+
+3. **Automatic Invalidation on Data Modification**:
+   - When critical data is modified, related caches are automatically invalidated
+   - For example, when removing a quarter via `/scraper/remove-quarter`, all related caches are cleared
+
+### Cache Invalidation Implementation
+
+When implementing a new feature or modifying an existing one, follow these patterns for proper cache management:
+
+```python
+# Import the cache module
+from src.utils.cache import cache_with_ttl, clear_cache_with_prefix
+
+# In a service that modifies data:
+async def update_data():
+    # Update the data
+    result = await db.collection.update_many({...})
+    
+    # Invalidate related caches
+    clear_cache_with_prefix("get_available_quarters")
+    clear_cache_with_prefix("get_market_data") 
+    
+    return result
+    
+# For a cached function:
+@cache_with_ttl(ttl_seconds=3600)
+async def get_data(force_refresh: bool = False):
+    # Handle manual cache invalidation
+    if force_refresh:
+        clear_cache_with_prefix("get_data")
+        
+    # Fetch and return data
+    return data
+```
+
+### Cache-Related Issues
+
+If you encounter issues with stale data after updates:
+
+1. **Check Cache Invalidation**:
+   - Ensure that appropriate caches are invalidated when modifying data
+   - Use the `force_refresh=true` parameter to bypass the cache during testing
+
+2. **Cache Key Conflicts**:
+   - Ensure that cache keys are properly generated for different function calls
+   - Check that the prefix in `clear_cache_with_prefix()` matches the actual cache keys
+
+3. **Frontend Considerations**:
+   - The frontend should use the `forceRefresh` parameter when users explicitly refresh data
+   - Implement optimistic UI updates for better user experience during cache refresh
+
+### Cache System Improvements
+
+Recent improvements to the cache system include:
+
+1. **Prefix-based Invalidation**: Added `clear_cache_with_prefix()` function to clear related caches
+2. **Proper Invalidation in `remove_quarter_from_all_companies()`**: Now clears both quarters and market data caches
+3. **Frontend Cache Handling**: Added timeout and better error handling in the frontend when refreshing data
+4. **Optimistic UI Updates**: Immediately updating the UI while waiting for cache refresh
+
+These improvements address issues with stale data appearing in dropdowns after removing quarters, ensuring consistent data across all parts of the application.
+

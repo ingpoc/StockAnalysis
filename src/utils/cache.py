@@ -1,10 +1,32 @@
 from functools import wraps
 from datetime import datetime, timedelta
 from typing import Any, Callable
+import logging
 
 # Simple in-memory cache
 cache_store = {}
 cache_timestamps = {}
+
+logger = logging.getLogger(__name__)
+
+def clear_cache_with_prefix(prefix: str):
+    """
+    Clear all cache entries that start with the given prefix.
+    
+    Args:
+        prefix (str): The prefix to match against cache keys.
+    """
+    keys_to_remove = []
+    for key in list(cache_store.keys()):
+        if key.startswith(prefix):
+            keys_to_remove.append(key)
+    
+    for key in keys_to_remove:
+        del cache_store[key]
+        if key in cache_timestamps:
+            del cache_timestamps[key]
+    
+    logger.info(f"Cleared {len(keys_to_remove)} cache entries with prefix '{prefix}'")
 
 def cache_with_ttl(ttl_seconds: int = 300):
     def decorator(func: Callable) -> Callable:

@@ -9,6 +9,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 from pymongo.errors import PyMongoError
 from dotenv import load_dotenv
+from src.utils.cache import clear_cache_with_prefix
 
 # Load environment variables
 load_dotenv()
@@ -238,6 +239,11 @@ async def remove_quarter_from_all_companies(quarter: str, collection: Optional[A
                 }
             }
         )
+        
+        # After successful update, invalidate all caches related to market data and quarters
+        clear_cache_with_prefix("get_available_quarters")
+        clear_cache_with_prefix("get_market_data")
+        logger.info(f"Invalidated related caches after removing quarter {quarter}")
         
         logger.info(f"Removed quarter {quarter} from {result.modified_count} companies")
         return result.modified_count
