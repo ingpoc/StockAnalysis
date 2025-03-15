@@ -4,6 +4,7 @@ Schemas for financial data scraped from MoneyControl.
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from pydantic import BaseModel, Field, validator
+from bson import ObjectId
 
 class FinancialMetric(BaseModel):
     """Schema for individual financial metrics."""
@@ -52,6 +53,17 @@ class CompanyFinancials(BaseModel):
             return symbol.strip()
         return symbol
 
+class PyObjectId(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
+
 class ScrapeRequest(BaseModel):
     """Request model for scraping financial data."""
     result_type: str = Field(default="LR", description="Type of results to scrape (LR, BP, WP, PT, NT)")
@@ -64,6 +76,11 @@ class ScrapeResponse(BaseModel):
     message: str
     companies_scraped: int
     data: Optional[List[Dict[str, Any]]] = None
+
+    class Config:
+        json_encoders = {
+            ObjectId: str
+        }
 
 class RemoveQuarterRequest(BaseModel):
     """Schema for remove quarter request parameters."""

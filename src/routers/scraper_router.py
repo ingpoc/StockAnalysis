@@ -6,9 +6,22 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorCollection
 import logging
+from bson import ObjectId
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+# Custom JSON encoder for MongoDB ObjectId
+class PyObjectId(str):
+    @classmethod
+    def __get_validators__(cls):
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v):
+        if isinstance(v, ObjectId):
+            return str(v)
+        return v
 
 from src.scraper import (
     scrape_moneycontrol_earnings,

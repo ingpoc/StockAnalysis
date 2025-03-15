@@ -931,7 +931,7 @@ async def scrape_estimates_vs_actuals(url: str, db_collection: Optional[AsyncIOM
         driver.get(url)
         
         # Wait for estimate cards to load - updated selector
-        WebDriverWait(driver, 20).until(
+        WebDriverWait(driver, 40).until(
             EC.visibility_of_element_located((By.CSS_SELECTOR, '#estVsAct > div > ul > li:nth-child(1)'))
         )
         logger.info("Page opened successfully")
