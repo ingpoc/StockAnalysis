@@ -19,6 +19,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Create router without prefix (prefix is handled in registry)
 router = APIRouter()
 
 # Path to the backups directory
@@ -31,15 +32,18 @@ async def backup_database_endpoint(background_tasks: BackgroundTasks):
     """
     try:
         # Run the backup function as a background task
-        def run_backup():
+        async def run_backup():
             try:
-                backup_file = backup_database()
-                logger.info(f"Database backup completed successfully: {backup_file}")
+                backup_file = await backup_database()
+                if backup_file:
+                    logger.info(f"Database backup completed successfully: {backup_file}")
+                else:
+                    logger.error("Database backup failed")
             except Exception as e:
                 logger.error(f"Backup error: {str(e)}")
                 
         background_tasks.add_task(run_backup)
-        return {"message": "Database backup started"}
+        return {"message": "Database backup started", "status": "pending"}
     except Exception as e:
         logger.error(f"Error starting backup: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error starting backup: {str(e)}")

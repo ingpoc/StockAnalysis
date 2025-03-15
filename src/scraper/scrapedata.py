@@ -403,55 +403,120 @@ async def scrape_single_stock(driver: webdriver.Chrome, url: str, db_collection:
     Returns:
         Dict[str, Any]: Scraped financial data or None if scraping failed.
     """
-    try:
-        # Wait for the page to load
-        logger.info("Waiting for page to load")
+    max_retries = 3
+    retry_delay = 5
+    page_load_timeout = 120  # Increased timeout to 120 seconds
+    
+    for attempt in range(max_retries):
         try:
-            WebDriverWait(driver, 30).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, ".pcnsb, .nsecp, .bsecp, .stprh"))
-            )
-            logger.info("Page loaded successfully")
+            # Navigate to the URL
+            logger.info(f"Attempt {attempt + 1}/{max_retries}: Loading page {url}")
+            driver.get(url)
+            
+            # Wait for any of these elements to be present (more flexible wait condition)
+            selectors = [
+                ".pcnsb",  # Price and change
+                ".nsecp",  # NSE price
+                ".bsecp",  # BSE price
+                ".stprh",  # Stock price header
+                ".stock-details",  # General stock details
+                ".company-name",  # Company name
+                "#stockName"  # Stock name element
+            ]
+            
+            # Wait for at least one of the selectors to be present
+            logger.info("Waiting for page elements to load...")
+            element_found = False
+            for selector in selectors:
+                try:
+                    WebDriverWait(driver, page_load_timeout).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    element_found = True
+                    logger.info(f"Page loaded successfully (found {selector})")
+                    break
+                except TimeoutException:
+                    continue
+            
+            if not element_found:
+                if attempt < max_retries - 1:
+                    logger.warning(f"No elements found on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error("Failed to find any expected elements after all retries")
+                    return None
+            
+            # Additional wait for dynamic content
+            time.sleep(2)
+            
+            # Get the page source
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            
+            # Extract company info
+            company_info = extract_company_info(soup)
+            company_name = company_info.get("company_name")
+            symbol = company_info.get("symbol")
+            
+            if not company_name or not symbol:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Could not extract company info on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error("Could not extract company name or symbol after all retries")
+                    return None
+            
+            logger.info(f"Extracting financial data for {company_name} ({symbol})")
+            
+            # Extract financial data
+            financial_metrics = extract_financial_data(soup)
+            
+            # Verify we got meaningful data
+            if not financial_metrics or all(not v for v in financial_metrics.values()):
+                if attempt < max_retries - 1:
+                    logger.warning(f"No meaningful financial data found on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    logger.error("No meaningful financial data found after all retries")
+                    return None
+            
+            # Process financial data
+            processed_metrics = process_financial_data(financial_metrics)
+            
+            # Create the final data structure
+            financial_data = {
+                "company_name": company_name,
+                "symbol": symbol,
+                "financial_metrics": processed_metrics,
+                "timestamp": datetime.utcnow()
+            }
+            
+            # Store in database if provided
+            if db_collection:
+                logger.info(f"Storing financial data for {company_name} ({symbol}) in database")
+                await db_collection.insert_one(financial_data)
+            
+            logger.info(f"Successfully scraped financial data for {company_name} ({symbol})")
+            return financial_data
+            
         except TimeoutException:
-            logger.warning("Timeout waiting for page to load, proceeding anyway")
-        
-        # Get the page source
-        soup = BeautifulSoup(driver.page_source, "html.parser")
-        
-        # Extract company info
-        company_info = extract_company_info(soup)
-        company_name = company_info.get("company_name")
-        symbol = company_info.get("symbol")
-        
-        if not company_name or not symbol:
-            logger.error("Could not extract company name or symbol")
-            return None
-        
-        logger.info(f"Extracting financial data for {company_name} ({symbol})")
-        
-        # Extract financial data
-        financial_metrics = extract_financial_data(soup)
-        
-        # Process financial data
-        processed_metrics = process_financial_data(financial_metrics)
-        
-        # Create the final data structure
-        financial_data = {
-            "company_name": company_name,
-            "symbol": symbol,
-            "financial_metrics": processed_metrics,
-            "timestamp": datetime.utcnow()
-        }
-        
-        # Store in database if provided
-        if db_collection:
-            logger.info(f"Storing financial data for {company_name} ({symbol}) in database")
-            await db_collection.insert_one(financial_data)
-        
-        logger.info(f"Successfully scraped financial data for {company_name} ({symbol})")
-        return financial_data
-    except Exception as e:
-        logger.error(f"Error scraping single stock: {str(e)}")
-        return None
+            if attempt < max_retries - 1:
+                logger.warning(f"Timeout on attempt {attempt + 1}, retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error("Timeout error after all retries")
+                return None
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(f"Error on attempt {attempt + 1}: {str(e)}, retrying in {retry_delay} seconds...")
+                time.sleep(retry_delay)
+            else:
+                logger.error(f"Error scraping single stock after all retries: {str(e)}")
+                return None
+    
+    return None
 
 async def scrape_multiple_stocks(driver: webdriver.Chrome, url: str, db_collection: Optional[AsyncIOMotorCollection] = None) -> List[Dict[str, Any]]:
     """

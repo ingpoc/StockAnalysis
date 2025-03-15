@@ -8,7 +8,7 @@ import json
 import logging
 from datetime import datetime
 from bson import json_util
-from pymongo import MongoClient
+from motor.motor_asyncio import AsyncIOMotorClient
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
@@ -38,7 +38,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-def backup_database(backup_file=None):
+async def backup_database(backup_file=None):
     """
     Backup the detailed_financials collection to a JSON file.
     
@@ -56,18 +56,19 @@ def backup_database(backup_file=None):
         
         # Connect to MongoDB
         logger.info(f"Connecting to MongoDB at {MONGO_URI}")
-        client = MongoClient(MONGO_URI)
+        client = AsyncIOMotorClient(MONGO_URI)
         db = client[DB_NAME]
         
         # Check if the collection exists
-        if COLLECTION_NAME not in db.list_collection_names():
+        collections = await db.list_collection_names()
+        if COLLECTION_NAME not in collections:
             error_msg = f"{COLLECTION_NAME} collection does not exist"
             logger.error(error_msg)
             return None
         
         # Get all documents from the collection
         logger.info(f"Retrieving documents from {COLLECTION_NAME}")
-        documents = list(db[COLLECTION_NAME].find())
+        documents = await db[COLLECTION_NAME].find().to_list(length=None)
         
         # Check if any documents were found
         if not documents:
@@ -93,6 +94,9 @@ def backup_database(backup_file=None):
     except Exception as e:
         logger.error(f"Error during backup: {str(e)}")
         return None
+    finally:
+        # Close the client connection
+        client.close()
 
 @router.post("/backup", response_model=dict)
 async def api_backup_database():
@@ -103,7 +107,7 @@ async def api_backup_database():
         dict: Status of the backup operation.
     """
     try:
-        backup_file = backup_database()
+        backup_file = await backup_database()
         if backup_file:
             return {
                 "success": True,
@@ -117,7 +121,8 @@ async def api_backup_database():
         raise HTTPException(status_code=500, detail=f"Error during backup: {str(e)}")
 
 if __name__ == "__main__":
-    backup_file = backup_database()
+    import asyncio
+    backup_file = asyncio.run(backup_database())
     if backup_file:
         print(f"Backup completed successfully: {backup_file}")
         sys.exit(0)
