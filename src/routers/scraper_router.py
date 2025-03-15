@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorCollection
 import logging
 from bson import ObjectId
+import asyncio
+from datetime import datetime
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -60,6 +62,10 @@ class RemoveQuarterResponse(BaseModel):
     message: str
     documents_updated: int = 0
 
+# Add after other global variables
+_scraping_status: Dict[str, bool] = {}
+_last_scrape_time: Dict[str, datetime] = {}
+
 async def get_financials_collection() -> AsyncIOMotorCollection:
     """
     Get the financials collection.
@@ -71,6 +77,14 @@ async def get_financials_collection() -> AsyncIOMotorCollection:
     if collection is None:
         raise HTTPException(status_code=500, detail="Failed to connect to database")
     return collection
+
+@router.get("/status")
+async def get_scraping_status():
+    """Get the current status of scraping operations."""
+    return {
+        "is_scraping": any(_scraping_status.values()),
+        "last_scrape_time": max(_last_scrape_time.values()) if _last_scrape_time else None
+    }
 
 @router.post("/scrape", response_model=ScrapeResponse)
 async def scrape_data(request: ScrapeRequest, collection: AsyncIOMotorCollection = Depends(get_financials_collection)):
@@ -85,44 +99,45 @@ async def scrape_data(request: ScrapeRequest, collection: AsyncIOMotorCollection
         ScrapeResponse: Scrape response.
     """
     try:
-        if request.url:
-            # Scrape custom URL
-            results = await scrape_custom_url(request.url, collection)
-        else:
-            # Scrape by result type
-            results = await scrape_by_result_type(request.result_type, collection)
+        # Create a unique key for this scraping operation
+        scrape_key = f"{datetime.now().timestamp()}"
+        _scraping_status[scrape_key] = True
         
-        # If no results but no error was raised, provide a helpful message
-        if not results:
-            return ScrapeResponse(
-                success=True,
-                message="Scraping completed, but no new companies were found or all companies were already in the database.",
-                companies_scraped=0
-            )
+        # Create a background task for scraping
+        async def background_scrape():
+            try:
+                if request.url:
+                    await scrape_custom_url(request.url, collection)
+                else:
+                    await scrape_by_result_type(request.result_type, collection)
+            except Exception as e:
+                logger.error(f"Background scraping failed: {str(e)}")
+            finally:
+                _scraping_status[scrape_key] = False
+                _last_scrape_time[scrape_key] = datetime.now()
+                
+                # Cleanup old status entries
+                current_time = datetime.now()
+                old_keys = [k for k, t in _last_scrape_time.items() 
+                          if (current_time - t).total_seconds() > 3600]  # Remove entries older than 1 hour
+                for k in old_keys:
+                    _scraping_status.pop(k, None)
+                    _last_scrape_time.pop(k, None)
+
+        # Start the background task
+        asyncio.create_task(background_scrape())
         
         return ScrapeResponse(
             success=True,
-            message=f"Successfully scraped {len(results)} companies",
-            companies_scraped=len(results),
-            data=results
+            message="Scraping started in background",
+            companies_scraped=0
         )
+        
     except Exception as e:
-        error_message = str(e)
-        # Provide more user-friendly messages for common errors
-        if "chrome not reachable" in error_message.lower() or "no such window" in error_message.lower():
-            error_message = "Browser was closed during scraping. Please try again."
-        elif "invalid session id" in error_message.lower():
-            error_message = "Browser session was terminated. This usually happens when the browser is closed manually."
-        elif "timeout" in error_message.lower():
-            error_message = "Timeout waiting for page to load. Please check your internet connection and try again."
-        elif "connection" in error_message.lower():
-            error_message = "Network connection issue. Please check your internet connection and try again."
-        
-        logger.error(f"Scraping error: {str(e)}")
-        
+        logger.error(f"Failed to start scraping: {str(e)}")
         return ScrapeResponse(
             success=False,
-            message=f"Error scraping data: {error_message}",
+            message=f"Failed to start scraping: {str(e)}",
             companies_scraped=0
         )
 
