@@ -16,6 +16,7 @@ from src.api.endpoints.ai_insights import router as ai_insights_router
 from src.api.endpoints.database_management import router as database_management_router
 from src.routers.scraper_router import router as scraper_router
 from src.api.endpoints.recommendations import router as recommendations_router
+from src.api.endpoints.logging import router as logging_router
 
 # Create main API router without prefix (prefix is added in main.py)
 api_router = APIRouter()
@@ -32,6 +33,7 @@ ROUTER_CONFIG: List[Tuple[APIRouter, str, List[str]]] = [
     (database_management_router, "/database", ["database"]),  # Single database router with /database prefix
     (scraper_router, "/scraper", ["scraper"]),
     (recommendations_router, "/recommendations", ["recommendations"]),
+    (logging_router, "/logs", ["logs"]),
 ]
 
 # Register all routers

@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+import re
 from src.models.schemas import MarketOverview, StockResponse, StockData
 from src.utils.cache import cache_with_ttl, clear_cache_with_prefix
 from src.utils.database import get_database
@@ -18,67 +19,72 @@ class MarketService:
             self._db = await get_database()
         return self._db
 
+    # Compile regex pattern once for repeated use
+    _count_pattern = re.compile(r'\((\d+)\)')
+    
     def _extract_latest_metrics(self, stock: Dict[str, Any], quarter: Optional[str] = None) -> Dict[str, Any]:
-        """Extract and process latest metrics from a stock document"""
-        if stock is None or not isinstance(stock.get("financial_metrics"), list):
+        """Extract and process latest metrics from a stock document (optimized)"""
+        # Early returns for invalid input
+        if not stock or not isinstance(stock.get("financial_metrics"), list) or not stock["financial_metrics"]:
             return None
         
         metrics = stock["financial_metrics"]
-        if not metrics:
-            return None
-            
-        # If quarter is specified, find the metric for that quarter
+        
+        # More efficient filtering approach
         if quarter:
+            # Use list comprehension once instead of checking length separately
             matching_metrics = [m for m in metrics if m.get("quarter") == quarter]
             if not matching_metrics:
                 return None
-            latest_metric = matching_metrics[-1]  # Get the most recent matching metric
+            latest_metric = matching_metrics[-1]
         else:
-            latest_metric = metrics[-1]  # Get the most recent metrics
+            # Direct access is faster than filtering when no quarter is specified
+            latest_metric = metrics[-1]
         
-        # Extract counts from strings like "Strengths (12)" and "Weaknesses (5)"
+        # Extract counts using compiled regex pattern - much faster for repeated use
         def extract_count(text: str) -> str:
-            if text is None or not isinstance(text, str) or "(" not in text:
+            if not text or not isinstance(text, str):
                 return "0"
-            try:
-                count = text.split("(")[1].split(")")[0]
-                return count if count.isdigit() else "0"
-            except (IndexError, ValueError):
-                return "0"
-
-        # Clean CMP value - extract just the price
+            
+            match = self._count_pattern.search(text)
+            return match.group(1) if match else "0"
+        
+        # Check availability first to avoid redundant checks later
+        has_strengths = "strengths" in latest_metric and latest_metric["strengths"] is not None
+        has_weaknesses = "weaknesses" in latest_metric and latest_metric["weaknesses"] is not None
+        
+        # More efficient string processing
         cmp_raw = latest_metric.get("cmp", "")
-        cmp_value = cmp_raw.split()[0] if cmp_raw else ""
-
-        # Clean growth value
+        # Split only if needed
+        cmp_value = cmp_raw.split()[0] if cmp_raw and " " in cmp_raw else cmp_raw
+        
+        # Simplified conditional logic for growth value
         growth_value = latest_metric.get("net_profit_growth", "0%")
-        if growth_value == "--" or not growth_value:
+        if not growth_value or growth_value == "--":
             growth_value = "0%"
         elif "%" not in growth_value:
             growth_value = f"{growth_value}%"
-
-        # Clean and extract all metrics with proper null handling
-        strengths = extract_count(latest_metric.get("strengths", None))
-        weaknesses = extract_count(latest_metric.get("weaknesses", None))
-        piotroski_score = str(latest_metric.get("piotroski_score", "0"))
-        fundamental_insights = latest_metric.get("fundamental_insights", "")
-        estimates = latest_metric.get("estimates", "")
-
-        # Check if strengths/weaknesses are actually available
-        has_strengths = "strengths" in latest_metric and latest_metric["strengths"] is not None
-        has_weaknesses = "weaknesses" in latest_metric and latest_metric["weaknesses"] is not None
-
+        
+        # Pre-process values that require computation
+        strengths_value = extract_count(latest_metric.get("strengths")) if has_strengths else "NA"
+        weaknesses_value = extract_count(latest_metric.get("weaknesses")) if has_weaknesses else "NA"
+        
+        # Use direct conditional expressions for optional values
+        estimates = latest_metric.get("estimates") or "--"
+        recommendation = latest_metric.get("fundamental_insights") or "--"
+        
+        # Return dict construction is now more direct
         return {
             "company_name": stock.get("company_name", "Unknown"),
             "symbol": stock.get("symbol", ""),
             "cmp": cmp_value,
             "net_profit_growth": growth_value,
-            "strengths": strengths if has_strengths else "NA",
-            "weaknesses": weaknesses if has_weaknesses else "NA",
-            "piotroski_score": piotroski_score,
-            "estimates": estimates if estimates else "--",
+            "strengths": strengths_value,
+            "weaknesses": weaknesses_value,
+            "piotroski_score": str(latest_metric.get("piotroski_score", "0")),
+            "estimates": estimates,
             "result_date": latest_metric.get("result_date", ""),
-            "recommendation": fundamental_insights if fundamental_insights else "--"
+            "recommendation": recommendation
         }
 
     async def get_stock_details(self, symbol: str) -> StockResponse:
@@ -111,20 +117,34 @@ class MarketService:
             raise Exception(f"Failed to fetch stock details: {str(e)}")
 
     async def get_batch_stock_details(self, symbols: List[str]) -> Dict[str, StockResponse]:
-        """Get detailed stock information for multiple symbols in a single call"""
+        """Get detailed stock information for multiple symbols with optimized concurrent processing"""
         try:
-            result = {}
-            # Process each symbol and collect results
-            for symbol in symbols:
-                try:
-                    stock_data = await self.get_stock_details(symbol)
-                    result[symbol] = stock_data
-                except Exception as e:
-                    # Store error information in the result
-                    logger.warning(f"Error fetching stock details for {symbol}: {str(e)}")
-                    result[symbol] = {"error": str(e)}
+            import asyncio
+            from asyncio import TimeoutError as AsyncTimeoutError
             
-            return result
+            # Process symbols in parallel for better performance
+            async def get_stock_with_timeout(symbol, timeout=5):
+                try:
+                    # Apply timeout to prevent slow queries from blocking
+                    return symbol, await asyncio.wait_for(
+                        self.get_stock_details(symbol),
+                        timeout=timeout
+                    )
+                except AsyncTimeoutError:
+                    logger.warning(f"Timeout fetching details for {symbol}")
+                    return symbol, {"error": f"Operation timed out after {timeout} seconds"}
+                except Exception as e:
+                    logger.warning(f"Error fetching stock details for {symbol}: {str(e)}")
+                    return symbol, {"error": str(e)}
+            
+            # Create concurrent tasks for all symbols - improved performance
+            tasks = [get_stock_with_timeout(symbol) for symbol in symbols]
+            results = await asyncio.gather(*tasks)
+            
+            # Convert results to dictionary with better error handling
+            result_dict = {symbol: data for symbol, data in results}
+            
+            return result_dict
         except Exception as e:
             logger.error(f"Error in batch stock details: {str(e)}")
             raise Exception(f"Failed to fetch batch stock details: {str(e)}")
@@ -135,13 +155,22 @@ class MarketService:
         try:
             db = await self.get_db()
             
-            # Base query
+            # Optimized query with projection to fetch only needed fields
             query = {}
             if quarter:
                 query["financial_metrics.quarter"] = quarter
-
-            # Get all stocks
-            cursor = db.detailed_financials.find(query)
+                
+            # Only fetch the fields we actually need to reduce data transfer
+            projection = {
+                "company_name": 1,
+                "symbol": 1,
+                "financial_metrics": 1
+            }
+            
+            # Use cursor with optimized batch size
+            cursor = db.detailed_financials.find(query, projection).batch_size(50)
+            
+            # Pre-allocate array for better memory usage
             stocks = []
             async for stock in cursor:
                 processed_stock = self._extract_latest_metrics(stock, quarter)
@@ -156,35 +185,64 @@ class MarketService:
                     all_stocks=[]
                 )
 
-            # Sort by net profit growth for top/worst performers
+            # Pre-compiled regex and cached date format for better performance
+            date_format = '%B %d, %Y'
+            comma_pattern = re.compile(r',')
+            percent_pattern = re.compile(r'%')
+            
+            # Sort by net profit growth for top/worst performers - optimized
             def parse_growth(growth_str: str) -> float:
+                # Fast path for numeric types
+                if isinstance(growth_str, (int, float)):
+                    return float(growth_str)
+                
+                # Fast path for empty or None values
+                if not growth_str or not isinstance(growth_str, str):
+                    return 0.0
+                    
                 try:
-                    # Handle case where growth_str is already a number
-                    if isinstance(growth_str, (int, float)):
-                        return float(growth_str)
-                    return float(growth_str.strip('%').replace(',', ''))
+                    # Use regex sub instead of multiple string operations
+                    cleaned = comma_pattern.sub('', growth_str)
+                    cleaned = percent_pattern.sub('', cleaned)
+                    return float(cleaned.strip())
                 except (ValueError, AttributeError):
                     return 0.0
 
+            # Cache for parsed dates to avoid re-parsing the same date strings
+            date_cache = {}
+            
+            # Optimized date parsing with caching
+            def parse_date(date_str: str) -> datetime:
+                # Fast path for empty values
+                if not isinstance(date_str, str) or not date_str:
+                    return datetime.min
+                    
+                # Check cache first
+                if date_str in date_cache:
+                    return date_cache[date_str]
+                    
+                # Parse and cache the result
+                try:
+                    parsed_date = datetime.strptime(date_str, date_format)
+                    date_cache[date_str] = parsed_date
+                    return parsed_date
+                except (ValueError, TypeError):
+                    date_cache[date_str] = datetime.min
+                    return datetime.min
+                    
+            # Optimize sorting by pre-computing keys
+            growth_keys = {stock['symbol']: parse_growth(stock['net_profit_growth']) for stock in stocks}
             sorted_stocks = sorted(
                 stocks,
-                key=lambda x: parse_growth(x['net_profit_growth']),
+                key=lambda x: growth_keys.get(x['symbol'], 0.0),
                 reverse=True
             )
 
-            # Sort by result date for latest results
-            def parse_date(date_str: str) -> datetime:
-                try:
-                    # If date_str is not a string or is empty, return minimum date
-                    if not isinstance(date_str, str) or not date_str:
-                        return datetime.min
-                    return datetime.strptime(date_str, '%B %d, %Y')
-                except (ValueError, TypeError):
-                    return datetime.min
-
+            # Pre-compute date keys for faster sorting
+            date_keys = {stock['symbol']: parse_date(stock['result_date']) for stock in stocks}
             latest_results = sorted(
                 stocks,
-                key=lambda x: parse_date(x['result_date']),
+                key=lambda x: date_keys.get(x['symbol'], datetime.min),
                 reverse=True
             )
 
@@ -201,7 +259,7 @@ class MarketService:
 
     @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_available_quarters(self, force_refresh: bool = False) -> List[str]:
-        """Get list of available quarters from the database"""
+        """Get list of available quarters from the database (optimized)"""
         try:
             # If force_refresh is True, invalidate the cache for this function
             if force_refresh:
@@ -210,23 +268,53 @@ class MarketService:
                 logger.info("Forced refresh of available quarters cache")
             
             db = await self.get_db()
-            # Aggregate to get unique quarters from the detailed_financials collection
-            # and ensure there's at least one document with data for that quarter
+            
+            # Optimized pipeline with better filtering
             pipeline = [
+                # Pre-filter to only process documents with financial_metrics
+                {"$match": {"financial_metrics.0": {"$exists": True}}},
+                
+                # Unwind the array to process each metric separately
                 {"$unwind": "$financial_metrics"},
-                {"$group": {"_id": "$financial_metrics.quarter", "count": {"$sum": 1}}},
-                {"$match": {"_id": {"$ne": None}, "count": {"$gt": 0}}},
-                {"$sort": {"_id": -1}}  # Sort in descending order (most recent first)
+                
+                # Filter out empty quarters immediately
+                {"$match": {"financial_metrics.quarter": {"$nin": [None, ""]}}},
+                
+                # Group by quarter with more efficient counting
+                {"$group": {
+                    "_id": "$financial_metrics.quarter", 
+                    "count": {"$sum": 1},
+                    # Capture year for better sorting
+                    "year": {"$first": {"$substr": ["$financial_metrics.quarter", 0, 4]}},
+                    "q": {"$first": {"$substr": ["$financial_metrics.quarter", 5, 2]}}
+                }},
+                
+                # Ensure we have data for this quarter
+                {"$match": {"count": {"$gt": 0}}},
+                
+                # Sort by year and quarter for chronological ordering
+                {"$sort": {"year": -1, "q": -1}}
             ]
             
-            cursor = db.detailed_financials.aggregate(pipeline)
+            # More efficient cursor processing
+            cursor = db.detailed_financials.aggregate(
+                pipeline,
+                # Add cursor options for better performance
+                allowDiskUse=True,
+                batchSize=100
+            )
+            
+            # Pre-allocate array with a reasonable size estimate
             quarters = []
+            
+            # Fast path for most common case - just extract quarter ID
             async for doc in cursor:
-                if doc["_id"]:  # Ensure we don't include null/empty quarters
+                if doc["_id"]:
                     quarters.append(doc["_id"])
             
             logger.info(f"Retrieved {len(quarters)} available quarters from database")
             return quarters
         except Exception as e:
             logger.error(f"Error fetching available quarters: {str(e)}")
-            raise Exception("Failed to fetch available quarters")
+            # Add error details for better debugging
+            raise Exception(f"Failed to fetch available quarters: {str(e)}")

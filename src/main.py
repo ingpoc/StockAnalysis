@@ -5,10 +5,11 @@ from src.api.registry import API_DOCUMENTATION
 from src.utils.database import connect_to_mongodb, close_mongodb_connection, ensure_indexes
 from src.config import settings
 import logging
+from src.utils.logging_config import setup_logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# Configure logging to write to file
+logger = setup_logging()
+
 
 app = FastAPI(title="Stock Analysis API")
 
