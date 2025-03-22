@@ -15,6 +15,7 @@ from src.api.endpoints.analysis import router as analysis_router
 from src.api.endpoints.ai_insights import router as ai_insights_router
 from src.api.endpoints.database_management import router as database_management_router
 from src.routers.scraper_router import router as scraper_router
+from src.api.endpoints.recommendations import router as recommendations_router
 
 # Create main API router without prefix (prefix is added in main.py)
 api_router = APIRouter()
@@ -30,6 +31,7 @@ ROUTER_CONFIG: List[Tuple[APIRouter, str, List[str]]] = [
     (ai_insights_router, "/ai/insights", ["ai"]),
     (database_management_router, "/database", ["database"]),  # Single database router with /database prefix
     (scraper_router, "/scraper", ["scraper"]),
+    (recommendations_router, "/recommendations", ["recommendations"]),
 ]
 
 # Register all routers
@@ -38,6 +40,21 @@ for router, prefix, tags in ROUTER_CONFIG:
 
 # Complete API documentation for reference
 API_DOCUMENTATION = {
+    "Recommendations": [
+        {
+            "method": "GET",
+            "path": "/recommendations/stock/{symbol}",
+            "description": "Gets buy/hold/sell recommendation for a specific stock",
+            "params": {
+                "symbol": "Stock ticker symbol"
+            }
+        },
+        {
+            "method": "GET",
+            "path": "/recommendations/portfolio",
+            "description": "Gets recommendations for all stocks in the portfolio"
+        }
+    ],
     "Market Data": [
         {
             "method": "GET",
