@@ -44,12 +44,12 @@ def extract_financial_data(card):
 
 def scrape_financial_metrics(driver, stock_link):
     """
-    Scrape additional financial metrics from a company's stock page.
-    
+    Scrape additional financial metrics from a company's stock page with enhanced timeout handling.
+
     Args:
         driver: WebDriver instance.
         stock_link: URL of the company's stock page.
-        
+
     Returns:
         Dict[str, Any]: Dictionary of additional financial metrics.
         str: Company symbol.
@@ -58,44 +58,123 @@ def scrape_financial_metrics(driver, stock_link):
     try:
         # Remember the original window handle
         original_window = driver.current_window_handle
-        
+
         # Open a new tab for the stock page
-        driver.execute_script(f"window.open('{stock_link}', '_blank');")
+        driver.execute_script(f"window.open('{stock_link}', '_blank');")  
         driver.switch_to.window(driver.window_handles[-1])
+
+        # Get company symbol from URL as fallback
+        symbol_from_url = None
+        try:
+            match = re.search(r'/([^/]+)/financials', stock_link)
+            if match:
+                symbol_from_url = match.group(1).upper()
+                logger.info(f"Extracted symbol from URL: {symbol_from_url}")
+        except Exception as e:
+            logger.warning(f"Could not extract symbol from URL: {str(e)}")
+
+        # Set page load timeout
+        driver.set_page_load_timeout(90)  # Increased from default
+
+        # Add a shorter script timeout
+        driver.set_script_timeout(90)  # Prevent scripts from hanging
+
+        # Wait for partial page load to start collecting data
+        try:
+            logger.info("Waiting for page body to be present")
+            WebDriverWait(driver, 30).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
+            logger.info("Body element found, waiting for company info")
+        except Exception as e:
+            logger.warning(f"Basic page load waiting timed out: {str(e)}")
+
+        # Progressive waiting strategy - first try the most critical elements
+        company_info_found = False
+        metrics_data = {}
+        symbol = None
+
+        # Try to get critical data as soon as it's available
+        for attempt in range(3):
+            try:
+                detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
+                
+                # Extract symbol early if possible
+                element = detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p')
+                if element and element.text.strip():
+                    symbol = element.text.strip()
+                    logger.info(f"Found company symbol: {symbol}")
+                    company_info_found = True
+                    break
+                
+                # Also try alternate selectors for symbol
+                alternates = [
+                        '.nsecpdets_sym',
+                    '.nsecp_sym',
+                    'span[id*="nseSymbol"]',
+                    '.stdetatitle .ntpcsd_lsncp span',
+                    '.stprh h1 + span'
+                    ]
+                
+                for selector in alternates:
+                    element = detailed_soup.select_one(selector)
+                    if element and element.text.strip():
+                        symbol = element.text.strip()
+                        # Remove parentheses if present
+                        symbol = symbol.replace("(", "").replace(")", "")
+                        logger.info(f"Found company symbol using alternate selector: {symbol}")
+                        company_info_found = True
+                        break
+                
+                if company_info_found:
+                    break
+                    
+                logger.info(f"Attempt {attempt+1}: Waiting for company info to load")
+                time.sleep(5)  # Wait between attempts
+            except Exception as e:
+                logger.warning(f"Error in attempt {attempt+1} to get company info: {str(e)}")
         
-        # Wait for the page to load
-        WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'body')))
+        # If we couldn't find the symbol, use the one from URL
+        if not symbol and symbol_from_url:
+            symbol = symbol_from_url
+            logger.info(f"Using symbol extracted from URL: {symbol}")
         
-        # Parse the page source
-        detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
-        
-        # Extract additional metrics
-        metrics = {
-            "market_cap": detailed_soup.select_one('tr:nth-child(7) td.nsemktcap.bsemktcap').text.strip() if detailed_soup.select_one('tr:nth-child(7) td.nsemktcap.bsemktcap') else None,
-            "face_value": detailed_soup.select_one('tr:nth-child(7) td.nsefv.bsefv').text.strip() if detailed_soup.select_one('tr:nth-child(7) td.nsefv.bsefv') else None,
-            "book_value": detailed_soup.select_one('tr:nth-child(5) td.nsebv.bsebv').text.strip() if detailed_soup.select_one('tr:nth-child(5) td.nsebv.bsebv') else None,
-            "dividend_yield": detailed_soup.select_one('tr:nth-child(6) td.nsedy.bsedy').text.strip() if detailed_soup.select_one('tr:nth-child(6) td.nsedy.bsedy') else None,
-            "ttm_eps": detailed_soup.select_one('tr:nth-child(1) td:nth-child(2) span.nseceps.bseceps').text.strip() if detailed_soup.select_one('tr:nth-child(1) td:nth-child(2) span.nseceps.bseceps') else None,
-            "ttm_pe": detailed_soup.select_one('tr:nth-child(2) td:nth-child(2) span.nsepe.bsepe').text.strip() if detailed_soup.select_one('tr:nth-child(2) td:nth-child(2) span.nsepe.bsepe') else None,
-            "pb_ratio": detailed_soup.select_one('tr:nth-child(3) td:nth-child(2) span.nsepb.bsepb').text.strip() if detailed_soup.select_one('tr:nth-child(3) td:nth-child(2) span.nsepb.bsepb') else None,
-            "sector_pe": detailed_soup.select_one('tr:nth-child(4) td.nsesc_ttm.bsesc_ttm').text.strip() if detailed_soup.select_one('tr:nth-child(4) td.nsesc_ttm.bsesc_ttm') else None,
-            "piotroski_score": detailed_soup.select_one('div:nth-child(2) div.fpioi div.nof').text.strip() if detailed_soup.select_one('div:nth-child(2) div.fpioi div.nof') else None,
-            "revenue_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("Revenue") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("Revenue") td:nth-child(2)') else None,
-            "net_profit_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("NetProfit") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("NetProfit") td:nth-child(2)') else None,
-            "operating_profit_growth_3yr_cagr": detailed_soup.select_one('tr:-soup-contains("OperatingProfit") td:nth-child(2)').text.strip() if detailed_soup.select_one('tr:-soup-contains("OperatingProfit") td:nth-child(2)') else None,
-            "strengths": detailed_soup.select_one('#swot_ls > a > strong').text.strip() if detailed_soup.select_one('#swot_ls > a > strong') else None,
-            "weaknesses": detailed_soup.select_one('#swot_lw > a > strong').text.strip() if detailed_soup.select_one('#swot_lw > a > strong') else None,
-            "technicals_trend": detailed_soup.select_one('#techAnalysis a[style*="flex"]').text.strip() if detailed_soup.select_one('#techAnalysis a[style*="flex"]') else None,
-            "fundamental_insights": detailed_soup.select_one('#mc_essenclick > div.bx_mceti.mc_insght > div > div').text.strip() if detailed_soup.select_one('#mc_essenclick > div.bx_mceti.mc_insght > div > div') else None,
-            "fundamental_insights_description": detailed_soup.select_one('#insight_class').text.strip() if detailed_soup.select_one('#insight_class') else None
-        }
-        
-        # Extract the company symbol
-        symbol = detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p').text.strip() if detailed_soup.select_one('#company_info > ul > li:nth-child(5) > ul > li:nth-child(2) > p') else None
-        
+        # Get available data from what has loaded
+        try:
+            logger.info("Extracting metrics from current page state")
+            detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
+            
+            # Use multiple selectors for each metric for better resilience
+            metrics_data = extract_metrics_with_fallbacks(detailed_soup)
+            
+            # If we got at least some metrics, consider it a partial success
+            if any(metrics_data.values()):
+                logger.info(f"Successfully extracted {sum(1 for v in metrics_data.values() if v)} metrics")
+            else:
+                logger.warning("No metrics data found in the current page state")
+                
+            # Wait a bit more for additional data if needed
+            if len([v for v in metrics_data.values() if v]) < 5:  # If we have less than 5 metrics
+                try:
+                    logger.info("Waiting for more data to load...")
+                    WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, '#mc_essenclick')))
+                    # Re-parse the page with potentially more data
+                    detailed_soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    additional_metrics = extract_metrics_with_fallbacks(detailed_soup)
+                    # Update our metrics with any new data
+                    for k, v in additional_metrics.items():
+                        if v and not metrics_data.get(k):  # Only update if we don't already have this metric
+                            metrics_data[k] = v
+                    logger.info(f"After additional wait, extracted {sum(1 for v in metrics_data.values() if v)} metrics")
+                except Exception as e:
+                    logger.warning(f"Error waiting for additional metrics: {str(e)}")
+            
+        except Exception as e:
+            logger.error(f"Error extracting metrics data: {str(e)}")
+            # Continue with what we have
+            
         # Check if we collected meaningful data
-        if not any(metrics.values()) or not symbol:
-            logger.warning("Failed to collect meaningful metrics data from the stock page")
+        has_data = any(metrics_data.values())
+        if not has_data and not symbol:
+            logger.warning("Failed to collect any meaningful data from the stock page")
         
         # Close the tab and switch back to the main window
         try:
@@ -103,15 +182,18 @@ def scrape_financial_metrics(driver, stock_link):
             driver.switch_to.window(original_window)
         except Exception as tab_close_error:
             logger.error(f"Error closing tab: {str(tab_close_error)}")
-            # If we can't close the tab and switch back, we need to force a failure
-            raise
+            # Try to switch back even if we couldn't close the tab
+            try:
+                driver.switch_to.window(original_window)
+            except Exception:
+                pass
         
-        return metrics, symbol
+        return metrics_data, symbol
     except (NoSuchWindowException, InvalidSessionIdException) as e:
         # Log a cleaner message without stack trace
         logger.error("Browser window was closed during metrics scraping")
-        # Return None for both values to signal incomplete data
-        return None, None
+        # Return empty dict and symbol from URL if available
+        return {}, symbol_from_url
     except Exception as e:
         logger.error(f"Error scraping financial metrics: {str(e)}")
         
@@ -122,8 +204,106 @@ def scrape_financial_metrics(driver, stock_link):
         except Exception as switch_error:
             logger.error(f"Error switching back to main window: {str(switch_error)}")
         
-        # Return None for both values to signal incomplete data
-        return None, None
+        # Return empty dict and symbol from URL if available
+        return {}, symbol_from_url
+
+def extract_metrics_with_fallbacks(soup):
+    """Extract metrics using multiple selectors for better resilience."""
+    metrics = {}
+    
+    # Market cap selectors
+    for selector in ['tr:nth-child(7) td.nsemktcap.bsemktcap', '.nsemktcap', '.bsemktcap', 'td:-soup-contains("Market Cap") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["market_cap"] = element.text.strip()
+            break
+    
+    # Face value selectors
+    for selector in ['tr:nth-child(7) td.nsefv.bsefv', '.nsefv', '.bsefv', 'td:-soup-contains("Face Value") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["face_value"] = element.text.strip()
+            break
+    
+    # Book value selectors
+    for selector in ['tr:nth-child(5) td.nsebv.bsebv', '.nsebv', '.bsebv', 'td:-soup-contains("Book Value") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["book_value"] = element.text.strip()
+            break
+    
+    # Dividend yield selectors
+    for selector in ['tr:nth-child(6) td.nsedy.bsedy', '.nsedy', '.bsedy', 'td:-soup-contains("Dividend Yield") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["dividend_yield"] = element.text.strip()
+            break
+    
+    # TTM EPS selectors
+    for selector in ['tr:nth-child(1) td:nth-child(2) span.nseceps.bseceps', '.nseceps', '.bseceps', 'td:-soup-contains("TTM EPS") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["ttm_eps"] = element.text.strip()
+            break
+    
+    # TTM P/E selectors
+    for selector in ['tr:nth-child(2) td:nth-child(2) span.nsepe.bsepe', '.nsepe', '.bsepe', 'td:-soup-contains("TTM P/E") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["ttm_pe"] = element.text.strip()
+            break
+    
+    # P/B ratio selectors
+    for selector in ['tr:nth-child(3) td:nth-child(2) span.nsepb.bsepb', '.nsepb', '.bsepb', 'td:-soup-contains("P/B Ratio") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["pb_ratio"] = element.text.strip()
+            break
+    
+    # Sector P/E selectors
+    for selector in ['tr:nth-child(4) td.nsesc_ttm.bsesc_ttm', '.nsesc_ttm', '.bsesc_ttm', 'td:-soup-contains("Sector P/E") + td']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["sector_pe"] = element.text.strip()
+            break
+    
+    # Piotroski score selectors
+    for selector in ['div:nth-child(2) div.fpioi div.nof', '.fpioi .nof', '#fpioi .nof', '.piotfact .nof']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["piotroski_score"] = element.text.strip()
+            break
+    
+    # Strengths selectors
+    for selector in ['#swot_ls > a > strong', '#swot_ls strong', '.strength-label', '.swot_ls strong']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["strengths"] = element.text.strip()
+            break
+    
+    # Weaknesses selectors
+    for selector in ['#swot_lw > a > strong', '#swot_lw strong', '.weakness-label', '.swot_lw strong']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["weaknesses"] = element.text.strip()
+            break
+    
+    # Technicals trend selectors
+    for selector in ['#techAnalysis a[style*="flex"]', '.tech_trend', '.techinalysis .trend', '.tech_pattern']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["technicals_trend"] = element.text.strip()
+            break
+    
+    # Fundamental insights selectors
+    for selector in ['#mc_essenclick > div.bx_mceti.mc_insght > div > div', '.mc_insght div', '.fundamental_rating', '.mc_insght .fin_recom']:
+        element = soup.select_one(selector)
+        if element and element.text.strip():
+            metrics["fundamental_insights"] = element.text.strip()
+            break
+    
+    # Even if we couldn't get all metrics, return what we have
+    return metrics
 
 def extract_company_info(soup: BeautifulSoup) -> Dict[str, str]:
     """
