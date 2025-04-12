@@ -42,16 +42,7 @@ class StockRecommendationService:
             ai_analyses = await self.ai_service.get_analysis_history(symbol)
             latest_analysis = ai_analyses[0] if ai_analyses else None
             
-            # If no analysis exists or it's older than 15 days, generate a new one
-            if not latest_analysis or (datetime.now() - latest_analysis.timestamp > timedelta(days=15)):
-                try:
-                    analysis_response = await self.ai_service.analyze_stock(symbol)
-                    latest_analysis_id = analysis_response.id
-                    latest_analysis = await self.ai_service.get_analysis_by_id(latest_analysis_id)
-                except Exception as e:
-                    logger.error(f"Error generating new analysis for {symbol}: {str(e)}")
-            
-            # Generate recommendation based on available data
+            # Generate recommendation based on available data (which might include old or no AI analysis)
             recommendation = await self._generate_recommendation(stock_details, latest_analysis)
             
             # Add recommendation timestamp
