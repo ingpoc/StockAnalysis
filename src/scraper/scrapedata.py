@@ -1189,4 +1189,121 @@ async def scrape_custom_url(url: str, scrape_type: str = "earnings", db_collecti
         return await scrape_estimates_vs_actuals(url, db_collection)
     else:
         logger.error(f"Invalid scrape_type: {scrape_type}. Valid types are 'earnings' or 'estimates'.")
-        return [] 
+        return []
+
+# Modified function to ONLY extract basic info and link
+
+def process_result_card_extract_link(card_element: BeautifulSoup) -> Optional[Dict[str, str]]:
+    company_name = None
+    symbol = None
+    stock_link = None
+    try:
+        name_tag = card_element.select_one('h3 a')
+        if name_tag and name_tag.has_attr('href'):
+            company_name = name_tag.text.strip()
+            stock_link = name_tag['href']
+            if stock_link.startswith('/'):
+                stock_link = f"https://www.moneycontrol.com{stock_link}"
+        else:
+            logger.warning("Could not find company name/link tag in card.")
+            return None
+        symbol_tag = card_element.select_one('.stkdetails span.nse')
+        if symbol_tag:
+            symbol = symbol_tag.text.strip()
+        else:
+            try:
+                parts = stock_link.split('/')
+                if len(parts) > 5:
+                    symbol = parts[-1]
+                    if not symbol:
+                        symbol = parts[-2]
+                logger.info(f"Extracted symbol '{symbol}' from link for {company_name}")
+            except Exception:
+                logger.warning(f"Could not extract symbol for {company_name}")
+                symbol = "N/A"
+        logger.debug(f"Extracted link info: Name='{company_name}', Symbol='{symbol}', Link='{stock_link}'")
+        return {
+            "company_name": company_name,
+            "symbol": symbol,
+            "stock_link": stock_link
+        }
+    except Exception as e:
+        logger.error(f"Error extracting link info from card: {e}")
+        return None
+
+async def fetch_and_store_stock_details(company_info: Dict[str, str], db_collection: Any):
+    url = company_info.get("stock_link")
+    company_name = company_info.get("company_name", "Unknown")
+    symbol = company_info.get("symbol", "Unknown")
+    if not url:
+        logger.warning(f"Missing stock link for {company_name}. Skipping detail fetch.")
+        return None
+    logger.info(f"Fetching details for {company_name} ({symbol}) from {url}")
+    financial_data = None
+    # --- httpx block (commented out) ---
+    # import httpx
+    # async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+    #     try:
+    #         response = await client.get(url)
+    #         response.raise_for_status()
+    #         soup = BeautifulSoup(response.text, 'html.parser')
+    #         extracted_info = extract_company_info(soup)
+    #         financial_metrics = extract_financial_data(soup)
+    #         if financial_metrics:
+    #             processed_metrics = process_financial_data(financial_metrics)
+    #             financial_data = {
+    #                 "company_name": extracted_info.get("company_name", company_name),
+    #                 "symbol": extracted_info.get("symbol", symbol),
+    #                 "financial_metrics": processed_metrics,
+    #                 "timestamp": datetime.utcnow()
+    #             }
+    #             logger.info(f"Successfully extracted details for {company_name} via httpx")
+    #     except Exception as e:
+    #         logger.error(f"Error processing {company_name} with httpx/BeautifulSoup: {e}")
+    # --- End httpx block ---
+    if financial_data is None:
+        logger.info(f"Falling back to Selenium for {company_name} ({url})")
+        driver = None
+        try:
+            driver = setup_webdriver()
+            financial_data = await scrape_single_stock(driver, url, db_collection=None)
+            if financial_data:
+                logger.info(f"Successfully extracted details for {company_name} via Selenium")
+            else:
+                logger.warning(f"Failed to extract details for {company_name} via Selenium fallback")
+        except Exception as e:
+            logger.error(f"Error scraping single stock {company_name} with Selenium fallback: {e}")
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+    if financial_data and db_collection:
+        try:
+            await update_or_insert_financial_data(financial_data, db_collection)
+            logger.info(f"Stored details for {company_name} in DB.")
+            return financial_data
+        except Exception as e:
+            logger.error(f"Failed to store data for {company_name}: {e}")
+    return financial_data
+
+async def scrape_details_concurrently(company_infos: List[Dict[str, str]], db_collection: Any):
+    if not company_infos:
+        logger.info("No company links provided for concurrent detail scraping.")
+        return []
+    tasks = []
+    for info in company_infos:
+        tasks.append(fetch_and_store_stock_details(info, db_collection))
+    logger.info(f"Starting concurrent detail scraping for {len(tasks)} companies...")
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    logger.info("Concurrent detail scraping finished.")
+    successful_scrapes = [r for r in results if r is not None and not isinstance(r, Exception)]
+    failed_scrapes = len(results) - len(successful_scrapes)
+    logger.info(f"Successfully scraped details for {len(successful_scrapes)} companies.")
+    if failed_scrapes > 0:
+        logger.warning(f"Failed to scrape details for {failed_scrapes} companies.")
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                logger.error(f"Error scraping details for company {company_infos[i].get('company_name', 'Unknown')}: {res}")
+    return successful_scrapes 

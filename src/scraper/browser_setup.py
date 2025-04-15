@@ -21,65 +21,41 @@ load_dotenv()
 # Import the centralized logger
 from src.utils.logger import logger
 
-def setup_webdriver(headless=False):
+def setup_webdriver(headless=True):
     """
     Set up and configure the WebDriver for scraping.
-    
+    Optimized for speed: defaults to headless mode and blocks images, fonts, and stylesheets.
     Args:
-        headless (bool): Whether to run the browser in headless mode. Default is False to show the browser.
-        
+        headless (bool): Whether to run the browser in headless mode. Default is True for scraping speed.
     Returns:
         webdriver.Chrome: Configured WebDriver instance or None if setup fails.
     """
     try:
         logger.info(f"Setting up WebDriver (headless: {headless})")
-        
-        # Set up Chrome options
         chrome_options = Options()
-        
-        # Add headless mode if enabled
         if headless:
             chrome_options.add_argument("--headless=new")
-        
-        # Add common options for stability and performance
         chrome_options.add_argument("--no-sandbox")
         chrome_options.add_argument("--disable-dev-shm-usage")
         chrome_options.add_argument("--disable-gpu")
         chrome_options.add_argument("--window-size=1920,1080")
         chrome_options.add_argument("--disable-extensions")
-        
-        # Add user agent to avoid detection
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        
-        # Exclude the "enable-automation" flag
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        
-        # Check which browser to use
         browser = os.getenv('BROWSER', 'chrome').lower()
-        
         if browser == 'brave':
             logger.info("Using Brave browser")
-            
-            # Path to Brave browser binary
-            if platform.system() == 'Darwin':  # macOS
-                if platform.machine() == 'arm64':  # Apple Silicon
-                    brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
-                else:  # Intel
-                    brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+            if platform.system() == 'Darwin':
+                brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
             elif platform.system() == 'Windows':
                 brave_path = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
-            else:  # Linux
+            else:
                 brave_path = "/usr/bin/brave-browser"
-            
-            # Check if the path exists
             if os.path.exists(brave_path):
                 chrome_options.binary_location = brave_path
             else:
                 logger.warning(f"Brave browser not found at {brave_path}, falling back to Chrome")
-        
-        # Set up WebDriver
         try:
-            # Try to create the driver directly without ChromeDriverManager
             logger.info("Creating WebDriver directly")
             driver = webdriver.Chrome(options=chrome_options)
         except Exception as e:
@@ -87,10 +63,14 @@ def setup_webdriver(headless=False):
             logger.info("Falling back to ChromeDriverManager")
             service = Service(ChromeDriverManager().install())
             driver = webdriver.Chrome(service=service, options=chrome_options)
-        
-        # Set page load timeout
         driver.set_page_load_timeout(60)
-        
+        # Block images, fonts, and stylesheets for speed
+        try:
+            driver.execute_cdp_cmd('Network.enable', {})
+            driver.execute_cdp_cmd('Network.setBlockedURLs', {"urls": ["*.png", "*.jpg", "*.jpeg", "*.gif", "*.webp", "*.svg", "*.woff", "*.woff2", "*.ttf", "*.otf", "*.ico", "*.css"]})
+            logger.info("Blocked images, fonts, and stylesheets for scraping speed.")
+        except Exception as e:
+            logger.warning(f"Could not block resources: {e}")
         logger.info("WebDriver set up successfully")
         return driver
     except Exception as e:

@@ -47,11 +47,12 @@ async def store_frontend_logs(logs: List[Dict[Any, Any]] = Body(...)):
         if details:
             log_message += f" - Details: {details}"
             
-        if level == "error":
-            frontend_logger.error(log_message)
-        elif level == "warn":
-            frontend_logger.warning(log_message)
-        else:
-            frontend_logger.info(log_message)
+        # Comment out all frontend_logger logging to disable dashboard log output
+        # if level == "error":
+        #     frontend_logger.error(log_message)
+        # elif level == "warn":
+        #     frontend_logger.warning(log_message)
+        # else:
+        #     frontend_logger.info(log_message)
             
     return {"status": "success", "logs_received": len(logs)}

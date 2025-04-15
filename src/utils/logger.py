@@ -19,4 +19,5 @@ for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
 
 # Create a logger instance that can be imported by other modules
-logger = logging.getLogger("stock_analysis") 
+logger = logging.getLogger("stock_analysis")
+logger.setLevel(logging.INFO)  # Show info, warnings, and errors 
