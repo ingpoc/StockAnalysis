@@ -48,21 +48,27 @@ def setup_webdriver(headless=True):
             if platform.system() == 'Darwin':
                 brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
             elif platform.system() == 'Windows':
-                brave_path = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+                brave_path = "C:\\\\Program Files\\\\BraveSoftware\\\\Brave-Browser\\\\Application\\\\brave.exe"
             else:
                 brave_path = "/usr/bin/brave-browser"
             if os.path.exists(brave_path):
                 chrome_options.binary_location = brave_path
             else:
                 logger.warning(f"Brave browser not found at {brave_path}, falling back to Chrome")
-        try:
-            logger.info("Creating WebDriver directly")
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            logger.warning(f"Failed to create WebDriver directly: {str(e)}")
-            logger.info("Falling back to ChromeDriverManager")
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+        # try:
+        #     logger.info("Creating WebDriver directly")
+        #     driver = webdriver.Chrome(options=chrome_options)
+        # except Exception as e:
+        #     logger.warning(f"Failed to create WebDriver directly: {str(e)}")
+        #     logger.info("Falling back to ChromeDriverManager")
+        #     service = Service(ChromeDriverManager().install())
+        #     driver = webdriver.Chrome(service=service, options=chrome_options)
+
+        # Consistently use ChromeDriverManager to handle WebDriver setup
+        logger.info("Initializing WebDriver using ChromeDriverManager")
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+
         driver.set_page_load_timeout(60)
         # Block images, fonts, and stylesheets for speed
         try:
