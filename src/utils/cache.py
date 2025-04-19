@@ -1,52 +1,57 @@
-from functools import wraps
-from datetime import datetime, timedelta
-from typing import Any, Callable
+import json
 import logging
+from functools import wraps
+from typing import Any, Callable
+from datetime import timedelta
+import redis.asyncio as _redis
+from src.config import settings
 
-# Simple in-memory cache
-cache_store = {}
-cache_timestamps = {}
+# Initialize Redis client for async caching
+redis_client = _redis.from_url(settings.REDIS_URL, db=settings.REDIS_DB)
 
 logger = logging.getLogger(__name__)
 
-def clear_cache_with_prefix(prefix: str):
+async def clear_cache_with_prefix(prefix: str):
     """
-    Clear all cache entries that start with the given prefix.
-    
+    Clear all Redis cache entries that start with the given prefix.
+
     Args:
         prefix (str): The prefix to match against cache keys.
     """
+    pattern = f"{prefix}*"
     keys_to_remove = []
-    for key in list(cache_store.keys()):
-        if key.startswith(prefix):
-            keys_to_remove.append(key)
-    
-    for key in keys_to_remove:
-        del cache_store[key]
-        if key in cache_timestamps:
-            del cache_timestamps[key]
-    
-    logger.info(f"Cleared {len(keys_to_remove)} cache entries with prefix '{prefix}'")
+    async for key in redis_client.scan_iter(match=pattern):
+        keys_to_remove.append(key)
+    if keys_to_remove:
+        await redis_client.delete(*keys_to_remove)
+    logger.info(f"Cleared {len(keys_to_remove)} Redis cache entries with prefix '{prefix}'")
 
 def cache_with_ttl(ttl_seconds: int = 300):
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            # Generate cache key
+            # Generate cache key based on function name and args
             force_refresh = kwargs.get('force_refresh', False)
-            cache_key = f"{func.__name__}:{str(args)}:{str(kwargs)}"
+            cache_key = f"{func.__name__}:{args}:{kwargs}"
 
-            # Check if cached and not expired
-            if not force_refresh and cache_key in cache_store:
-                timestamp = cache_timestamps[cache_key]
-                if datetime.now() - timestamp < timedelta(seconds=ttl_seconds):
-                    return cache_store[cache_key]
+            # Try retrieving from Redis
+            if not force_refresh:
+                try:
+                    cached = await redis_client.get(cache_key)
+                    if cached:
+                        return json.loads(cached)
+                except Exception as e:
+                    logger.warning(f"Redis GET error for {cache_key}: {e}")
 
-            # Execute function and cache result
+            # Call the original function and cache its result
             result = await func(*args, **kwargs)
-            cache_store[cache_key] = result
-            cache_timestamps[cache_key] = datetime.now()
-
+            try:
+                # Prepare data for serialization
+                data_to_cache = result.dict() if hasattr(result, 'dict') else result
+                serialized = json.dumps(data_to_cache, default=str)
+                await redis_client.set(cache_key, serialized, ex=ttl_seconds)
+            except Exception as e:
+                logger.warning(f"Redis SET error for {cache_key}: {e}")
             return result
         return wrapper
     return decorator

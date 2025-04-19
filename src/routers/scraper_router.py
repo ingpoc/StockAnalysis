@@ -32,6 +32,7 @@ from src.scraper import (
     get_db_collection
 )
 from src.scraper.db_operations import remove_quarter_from_all_companies
+from src.utils.cache import clear_cache_with_prefix
 
 router = APIRouter(
     prefix="",
@@ -123,6 +124,11 @@ async def scrape_data(request: ScrapeRequest, collection: AsyncIOMotorCollection
                 for k in old_keys:
                     _scraping_status.pop(k, None)
                     _last_scrape_time.pop(k, None)
+                # Clear cached market data so fresh results are served
+                try:
+                    await clear_cache_with_prefix("get_market_data")
+                except Exception as cache_err:
+                    logger.error(f"Error clearing cache after scraping: {cache_err}")
 
         # Start the background task
         asyncio.create_task(background_scrape())

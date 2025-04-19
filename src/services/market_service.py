@@ -264,7 +264,7 @@ class MarketService:
             # If force_refresh is True, invalidate the cache for this function
             if force_refresh:
                 # Use the clear_cache_with_prefix function to properly invalidate cache
-                clear_cache_with_prefix("get_available_quarters")
+                await clear_cache_with_prefix("get_available_quarters")
                 logger.info("Forced refresh of available quarters cache")
             
             db = await self.get_db()
