@@ -11,16 +11,11 @@ logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self):
-        self.db = None
-
-    async def get_db(self):
-        if self.db is None:
-            self.db = await get_database()
-        return self.db
+        pass
 
     async def get_analysis_history(self, symbol: str) -> List[AIAnalysis]:
         try:
-            db = await self.get_db()
+            db = await get_database()
             cursor = db.ai_analysis.find({"symbol": symbol}).sort("timestamp", -1)
             analyses = await cursor.to_list(length=None)
             if analyses is None:
@@ -39,7 +34,7 @@ class AIService:
 
     async def get_analysis_by_id(self, analysis_id: str) -> Optional[AIAnalysis]:
         try:
-            db = await self.get_db()
+            db = await get_database()
             analysis_doc = await db.ai_analysis.find_one({"_id": ObjectId(analysis_id)})
             if analysis_doc is None:
                 logger.info(f"No analysis found with ID: {analysis_id}")
@@ -58,7 +53,7 @@ class AIService:
 
     async def analyze_stock(self, symbol: str) -> AIAnalysisResponse:
         try:
-            db = await self.get_db()
+            db = await get_database()
             
             # Get stock data from main collection
             stock_data = await db.detailed_financials.find_one({"symbol": symbol})

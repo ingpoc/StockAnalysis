@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import logging
 from datetime import datetime, timedelta
 from src.models.schemas import Holding, StockResponse, EnrichedHolding
@@ -120,137 +120,171 @@ class StockRecommendationService:
             "summary": summary
         }
     
-    async def _generate_recommendation(self, stock_details: StockResponse, 
-                                      ai_analysis: Optional[Any] = None) -> Dict[str, Any]:
-        """
-        Core logic to generate a recommendation based on stock details and AI analysis.
+    def _parse_metrics(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse and clean raw metrics from stock details."""
+        price_str = metrics.get("cmp", "0")
+        current_price = float(price_str.replace("₹", "").replace("$", "").replace(",", "").strip() or 0)
         
-        Args:
-            stock_details: Stock details from market service
-            ai_analysis: Optional AI analysis results
-            
-        Returns:
-            Recommendation dictionary
-        """
-        # Default recommendation is HOLD when we don't have enough information
-        action = "HOLD"
-        confidence = 50  # Medium confidence
-        reasons = []
-        target_price = None
-        stop_loss = None
-        timeframe = "medium"  # Default to medium term
+        strengths_str = metrics.get("strengths", "0")
+        weaknesses_str = metrics.get("weaknesses", "0")
+        piotroski_score = metrics.get("piotroski_score", "0")
+        growth_str = metrics.get("net_profit_growth", "0%")
         
         try:
-            # Extract metrics from stock details
-            metrics = stock_details.formatted_metrics if hasattr(stock_details, 'formatted_metrics') else {}
+            strengths = int(strengths_str) if strengths_str.isdigit() else 0
+            weaknesses = int(weaknesses_str) if weaknesses_str.isdigit() else 0
+            piotroski = int(piotroski_score) if piotroski_score.isdigit() else 0
+            growth = float(growth_str.strip("%").replace(",", "")) if growth_str and growth_str != "--" else 0
+        except (ValueError, TypeError):
+            logger.warning("Error parsing metrics, using defaults.")
+            strengths, weaknesses, piotroski, growth = 0, 0, 5, 0 # Default to neutral values on error
             
-            # Get price
-            price_str = metrics.get("cmp", "0")
-            current_price = float(price_str.replace("₹", "").replace("$", "").replace(",", "").strip() or 0)
-            
-            # Extract metrics we'll use for recommendations
-            strengths_str = metrics.get("strengths", "0")
-            weaknesses_str = metrics.get("weaknesses", "0")
-            piotroski_score = metrics.get("piotroski_score", "0")
-            growth_str = metrics.get("net_profit_growth", "0%")
-            
-            # Clean and parse metrics
-            try:
-                strengths = int(strengths_str) if strengths_str.isdigit() else 0
-                weaknesses = int(weaknesses_str) if weaknesses_str.isdigit() else 0
-                piotroski = int(piotroski_score) if piotroski_score.isdigit() else 0
-                growth = float(growth_str.strip("%").replace(",", "")) if growth_str and growth_str != "--" else 0
-            except (ValueError, TypeError):
-                strengths, weaknesses, piotroski, growth = 0, 0, 5, 0
-                
-            # Use AI analysis if available
-            sentiment_score = 0.5  # Neutral default
-            if ai_analysis:
-                if hasattr(ai_analysis, 'sentiment') and ai_analysis.sentiment:
-                    sentiment_score = ai_analysis.sentiment.get("score", 0.5)
-                recommendation_text = getattr(ai_analysis, 'recommendation', None)
-                if recommendation_text:
-                    if "buy" in recommendation_text.lower():
-                        action = "BUY"
-                        confidence += 10
-                        reasons.append(f"AI Analysis Recommendation: {recommendation_text}")
-                    elif "sell" in recommendation_text.lower():
-                        action = "SELL" 
-                        confidence += 10
-                        reasons.append(f"AI Analysis Recommendation: {recommendation_text}")
-                        
-            # Generate recommendation based on fundamentals
-            
-            # Piotroski score factor (0-9 scale)
-            if piotroski >= 7:
+        return {
+            "current_price": current_price,
+            "strengths": strengths,
+            "weaknesses": weaknesses,
+            "piotroski": piotroski,
+            "growth": growth,
+            "growth_str": growth_str # Keep original string for reasons
+        }
+
+    def _evaluate_ai_analysis(self, ai_analysis: Optional[Any], current_action: str, current_confidence: int, reasons: List[str]) -> Tuple[str, int, float]:
+        """Evaluate AI analysis results and update recommendation."""
+        sentiment_score = 0.5 # Neutral default
+        action = current_action
+        confidence = current_confidence
+
+        if ai_analysis:
+            if hasattr(ai_analysis, 'sentiment') and ai_analysis.sentiment:
+                sentiment_score = ai_analysis.sentiment.get("score", 0.5)
+            recommendation_text = getattr(ai_analysis, 'recommendation', None)
+            if recommendation_text:
+                if "buy" in recommendation_text.lower():
+                    action = "BUY"
+                    confidence += 10
+                    reasons.append(f"AI Analysis Recommendation: {recommendation_text}")
+                elif "sell" in recommendation_text.lower():
+                    action = "SELL" 
+                    confidence += 10
+                    reasons.append(f"AI Analysis Recommendation: {recommendation_text}")
+        
+        # Also add sentiment factor based on score
+        if sentiment_score > 0.7:
+            if action != "SELL": # Don't override strong sell signals based solely on sentiment
                 action = "BUY"
-                confidence += 15
-                reasons.append(f"Strong Piotroski score: {piotroski}/9")
-            elif piotroski <= 3:
+            confidence += 10
+            reasons.append("Very positive sentiment from analysis")
+        elif sentiment_score < 0.3:
+            if action != "BUY": # Don't override strong buy signals based solely on sentiment
                 action = "SELL"
-                confidence += 15
-                reasons.append(f"Weak Piotroski score: {piotroski}/9")
-            else:
-                reasons.append(f"Average Piotroski score: {piotroski}/9")
-                
-            # Strengths vs Weaknesses
-            strength_ratio = strengths / (weaknesses + 1)  # Avoid division by zero
-            if strength_ratio > 3:
-                if action != "SELL":  # Don't override a SELL from Piotroski
-                    action = "BUY"
-                confidence += 10
-                reasons.append(f"Strong fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
-            elif strength_ratio < 0.5:
-                if action != "BUY":  # Don't override a BUY from Piotroski
-                    action = "SELL"
-                confidence += 10
-                reasons.append(f"Weak fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
-            else:
-                reasons.append(f"Balanced fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
-                
-            # Growth factor
-            if growth > 25:
-                if action != "SELL":  # Don't override a SELL
-                    action = "BUY"
-                confidence += 10
-                reasons.append(f"Strong growth: {growth_str}")
-            elif growth < 0:
-                if action != "BUY":  # Don't override a BUY
-                    action = "SELL"
-                confidence += 10
-                reasons.append(f"Negative growth: {growth_str}")
-            else:
-                reasons.append(f"Moderate growth: {growth_str}")
-                
-            # Sentiment factor
-            if sentiment_score > 0.7:
-                if action != "SELL":
-                    action = "BUY"
-                confidence += 10
-                reasons.append("Very positive sentiment from analysis")
-            elif sentiment_score < 0.3:
-                if action != "BUY":
-                    action = "SELL"
-                confidence += 10
-                reasons.append("Very negative sentiment from analysis")
+            confidence += 10
+            reasons.append("Very negative sentiment from analysis")
             
-            # Cap confidence at 100
-            confidence = min(confidence, 100)
+        return action, confidence, sentiment_score
+        
+    def _evaluate_piotroski(self, piotroski: int, current_action: str, current_confidence: int, reasons: List[str]) -> Tuple[str, int]:
+        """Evaluate Piotroski score and update recommendation."""
+        action = current_action
+        confidence = current_confidence
+        if piotroski >= 7:
+            action = "BUY" # Strong signal, overrides previous
+            confidence += 15
+            reasons.append(f"Strong Piotroski score: {piotroski}/9")
+        elif piotroski <= 3:
+            action = "SELL" # Strong signal, overrides previous
+            confidence += 15
+            reasons.append(f"Weak Piotroski score: {piotroski}/9")
+        else:
+            reasons.append(f"Average Piotroski score: {piotroski}/9")
+        return action, confidence
+
+    def _evaluate_fundamentals(self, strengths: int, weaknesses: int, current_action: str, current_confidence: int, reasons: List[str]) -> Tuple[str, int]:
+        """Evaluate strengths vs weaknesses and update recommendation."""
+        action = current_action
+        confidence = current_confidence
+        strength_ratio = strengths / (weaknesses + 1) # Avoid division by zero
+        if strength_ratio > 3:
+            if action != "SELL": # Don't override a strong SELL signal
+                action = "BUY"
+            confidence += 10
+            reasons.append(f"Strong fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
+        elif strength_ratio < 0.5:
+            if action != "BUY": # Don't override a strong BUY signal
+                action = "SELL"
+            confidence += 10
+            reasons.append(f"Weak fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
+        else:
+            reasons.append(f"Balanced fundamentals: {strengths} strengths vs {weaknesses} weaknesses")
+        return action, confidence
+        
+    def _evaluate_growth(self, growth: float, growth_str: str, current_action: str, current_confidence: int, reasons: List[str]) -> Tuple[str, int]:
+        """Evaluate growth factor and update recommendation."""
+        action = current_action
+        confidence = current_confidence
+        if growth > 25:
+            if action != "SELL": # Don't override a strong SELL signal
+                action = "BUY"
+            confidence += 10
+            reasons.append(f"Strong growth: {growth_str}")
+        elif growth < 0:
+            if action != "BUY": # Don't override a strong BUY signal
+                action = "SELL"
+            confidence += 10
+            reasons.append(f"Negative growth: {growth_str}")
+        else:
+            reasons.append(f"Moderate growth: {growth_str}")
+        return action, confidence
+
+    def _determine_timeframe(self, piotroski: int, growth: float) -> str:
+        """Determine recommendation timeframe based on metrics."""
+        if piotroski >= 7 and growth > 20:
+            return "long"
+        elif piotroski <= 3 or growth < 0:
+            return "short"
+        else:
+            return "medium"
             
-            # Set timeframe based on metrics
-            if piotroski >= 7 and growth > 20:
-                timeframe = "long"
-            elif piotroski <= 3 or growth < 0:
-                timeframe = "short"
+    def _calculate_prices(self, action: str, current_price: float, growth: float) -> Tuple[Optional[float], Optional[float]]:
+        """Calculate target price and stop loss based on action and metrics."""
+        target_price = None
+        stop_loss = None
+        if action == "BUY" and current_price > 0:
+            growth_factor = max(1.0, 1.0 + (growth / 100))
+            target_price = round(current_price * growth_factor * 1.1, 2) # Add 10% buffer
+        elif action == "SELL" and current_price > 0:
+            stop_loss = round(current_price * 0.95, 2) # 5% below current as stop loss
+        return target_price, stop_loss
+
+    async def _generate_recommendation(self, stock_details: StockResponse, 
+                                      ai_analysis: Optional[Any] = None) -> Dict[str, Any]:
+        """Core logic to generate a recommendation based on stock details and AI analysis."""
+        action = "HOLD"
+        confidence = 30 # Start with lower base confidence
+        reasons = []
+        
+        try:
+            raw_metrics = stock_details.formatted_metrics if hasattr(stock_details, 'formatted_metrics') else {}
+            if not raw_metrics:
+                raise ValueError("No formatted metrics found in stock details")
                 
-            # Calculate target price (very simplified)
-            if action == "BUY" and current_price > 0:
-                # Simple target based on growth rate and confidence
-                growth_factor = max(1.0, 1.0 + (growth / 100))
-                target_price = round(current_price * growth_factor, 2)
-            elif action == "SELL" and current_price > 0:
-                # No target for sell, but set stop loss
-                stop_loss = round(current_price * 0.9, 2)  # 10% below current as stop loss
+            parsed_metrics = self._parse_metrics(raw_metrics)
+
+            # 1. Evaluate AI Analysis & Sentiment First (if available)
+            action, confidence, _ = self._evaluate_ai_analysis(ai_analysis, action, confidence, reasons)
+
+            # 2. Evaluate Piotroski Score (can override AI action)
+            action, confidence = self._evaluate_piotroski(parsed_metrics["piotroski"], action, confidence, reasons)
+
+            # 3. Evaluate Fundamentals (strengths/weaknesses)
+            action, confidence = self._evaluate_fundamentals(parsed_metrics["strengths"], parsed_metrics["weaknesses"], action, confidence, reasons)
+
+            # 4. Evaluate Growth
+            action, confidence = self._evaluate_growth(parsed_metrics["growth"], parsed_metrics["growth_str"], action, confidence, reasons)
+            
+            # Final Adjustments
+            confidence = min(confidence, 100) # Cap confidence
+            timeframe = self._determine_timeframe(parsed_metrics["piotroski"], parsed_metrics["growth"])
+            target_price, stop_loss = self._calculate_prices(action, parsed_metrics["current_price"], parsed_metrics["growth"])
                 
             return {
                 "action": action,
@@ -262,11 +296,12 @@ class StockRecommendationService:
             }
                 
         except Exception as e:
-            logger.error(f"Error in recommendation generation: {str(e)}")
+            logger.error(f"Error in recommendation generation logic: {str(e)}")
+            # Return a safe default on error
             return {
                 "action": "HOLD",
-                "confidence": 30,
-                "reasons": ["Error in recommendation logic", "Using cautious HOLD recommendation"],
+                "confidence": 0,
+                "reasons": [f"Error in recommendation logic: {str(e)}", "Using cautious HOLD recommendation"],
                 "target_price": None,
                 "stop_loss": None,
                 "timeframe": "medium"

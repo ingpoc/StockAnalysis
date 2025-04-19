@@ -12,12 +12,6 @@ logger = logging.getLogger(__name__)
 class MarketService:
     def __init__(self):
         self._cache = {}
-        self._db = None
-
-    async def get_db(self):
-        if self._db is None:
-            self._db = await get_database()
-        return self._db
 
     # Compile regex pattern once for repeated use
     _count_pattern = re.compile(r'\((\d+)\)')
@@ -90,7 +84,7 @@ class MarketService:
     async def get_stock_details(self, symbol: str) -> StockResponse:
         """Get detailed stock information including financials"""
         try:
-            db = await self.get_db()
+            db = await get_database()
             stock = await db.detailed_financials.find_one({"symbol": symbol})
             
             if not stock:
@@ -153,7 +147,7 @@ class MarketService:
     async def get_market_data(self, quarter: Optional[str] = None, force_refresh: bool = False) -> MarketOverview:
         """Get market overview data with optional quarter filter"""
         try:
-            db = await self.get_db()
+            db = await get_database()
             
             # Optimized query with projection to fetch only needed fields
             query = {}
@@ -267,7 +261,7 @@ class MarketService:
                 await clear_cache_with_prefix("get_available_quarters")
                 logger.info("Forced refresh of available quarters cache")
             
-            db = await self.get_db()
+            db = await get_database()
             
             # Optimized pipeline with better filtering
             pipeline = [

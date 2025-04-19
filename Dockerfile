@@ -12,14 +12,10 @@ RUN apt-get update && \
 # Copy and install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY ../run.py ./
-
-# Copy application source
-COPY src/ ./src/
 
 # Expose backend port
 EXPOSE 8000
 
 # Mount backend .env at runtime
-# Command to start the server via run.py
+# Command to start the server via run.py (run.py is now mounted)
 CMD ["python", "run.py"] 
