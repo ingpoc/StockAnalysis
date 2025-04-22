@@ -274,3 +274,18 @@ class EnrichedHolding(Holding):
             datetime: lambda dt: dt.isoformat()
         }
         arbitrary_types_allowed = True
+
+class ReplacementSuggestion(BaseModel):
+    """Represents a potential replacement stock suggestion."""
+    symbol: str = Field(..., description="Symbol of the suggested replacement stock")
+    reason: str = Field(..., description="Brief reason for suggesting this replacement")
+    score: float = Field(..., description="Confidence score (0.0 to 1.0) for the suggestion")
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "reason": "Strong fundamentals in the same sector",
+                "score": 0.85
+            }
+        }

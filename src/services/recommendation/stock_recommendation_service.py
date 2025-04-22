@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Any, Tuple
 import logging
 from datetime import datetime, timedelta
-from src.models.schemas import Holding, StockResponse, EnrichedHolding
+from src.models.schemas import Holding, StockResponse, EnrichedHolding, ReplacementSuggestion
 from src.utils.database import get_database
 from src.services.market_service import MarketService
 from src.services.ai_service import AIService
@@ -70,46 +70,61 @@ class StockRecommendationService:
     
     async def get_portfolio_recommendations(self, holdings: List[EnrichedHolding]) -> Dict[str, Any]:
         """
-        Generate recommendations for all stocks in a portfolio.
+        Generate recommendations for all stocks in a portfolio, including replacement suggestions for SELLs.
         
         Args:
             holdings (List[EnrichedHolding]): List of portfolio holdings
             
         Returns:
             Dict containing:
-            - recommendations: Dict mapping symbols to recommendations
+            - recommendations: Dict mapping symbols to recommendations (now includes 'replacement_suggestions')
             - summary: Portfolio-level summary and suggestions
         """
         recommendations = {}
         
         # Process each holding to get recommendations
         for holding in holdings:
+            symbol = holding.symbol # Define symbol early
             try:
-                symbol = holding.symbol
-                
                 # Check if we have a recent recommendation in the database
                 recent_recommendation = await self._get_recent_recommendation(symbol)
                 
                 if recent_recommendation:
                     # Use existing recommendation if recent (less than 7 days old)
-                    recommendations[symbol] = recent_recommendation
+                    recommendation = recent_recommendation # Assign to recommendation var
+                    # Ensure symbol is present if loaded from DB
+                    if "symbol" not in recommendation:
+                         recommendation["symbol"] = symbol
+                    recommendations[symbol] = recommendation
                 else:
                     # Generate new recommendation
                     recommendation = await self.get_recommendation_for_stock(symbol)
                     recommendations[symbol] = recommendation
+
+                # Add replacement suggestions if action is SELL
+                if recommendation.get("action") == "SELL":
+                    # Placeholder: Criteria could include sector, risk profile etc. from holding or stock details
+                    criteria = {"sector": "Technology"} # Example criteria
+                    replacement_suggestions = await self._find_replacement_suggestions(symbol, criteria)
+                    # Convert suggestions to dict for JSON serialization if they are Pydantic models
+                    recommendations[symbol]["replacement_suggestions"] = [s.model_dump() for s in replacement_suggestions]
+                else:
+                    # Ensure the key exists even if no suggestions
+                    recommendations[symbol]["replacement_suggestions"] = [] 
                     
             except Exception as e:
-                logger.error(f"Error processing recommendation for {holding.symbol}: {str(e)}")
+                logger.error(f"Error processing recommendation for {symbol}: {str(e)}")
                 # Add a default recommendation for failed items
-                recommendations[holding.symbol] = {
-                    "symbol": holding.symbol,
+                recommendations[symbol] = {
+                    "symbol": symbol,
                     "action": "HOLD",
                     "confidence": 0,
                     "reasons": ["Error processing recommendation", "Insufficient data"],
                     "target_price": None,
                     "stop_loss": None,
                     "timeframe": "medium",
-                    "timestamp": datetime.now()
+                    "timestamp": datetime.now(),
+                    "replacement_suggestions": [] # Add empty list here too
                 }
         
         # Generate portfolio-level summary and suggestions
@@ -416,3 +431,20 @@ class StockRecommendationService:
                     "total": len(recommendations)
                 }
             }
+
+    async def _find_replacement_suggestions(self, symbol_to_replace: str, criteria: Dict) -> List[ReplacementSuggestion]:
+        """
+        Placeholder: Finds potential replacement stocks based on criteria.
+        In a real implementation, this would query market data, filter by criteria 
+        (sector, market cap, risk profile), analyze candidates, and rank them.
+        """
+        logger.info(f"Finding replacements for {symbol_to_replace} based on {criteria}")
+        # Dummy suggestions for now
+        suggestions = [
+            ReplacementSuggestion(symbol="AAPL", reason="Strong fundamentals in the same sector", score=0.85),
+            ReplacementSuggestion(symbol="MSFT", reason="Lower volatility, stable growth", score=0.80),
+            ReplacementSuggestion(symbol="GOOGL", reason="Potential upside based on recent news", score=0.75),
+        ]
+        # Filter out the stock being replaced if it somehow appears in suggestions
+        suggestions = [s for s in suggestions if s.symbol != symbol_to_replace]
+        return suggestions[:2] # Return top 2 suggestions
