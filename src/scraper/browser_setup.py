@@ -25,6 +25,7 @@ def setup_webdriver(headless=True):
     """
     Set up and configure the WebDriver for scraping.
     Optimized for speed: defaults to headless mode and blocks images, fonts, and stylesheets.
+    Uses Chromium and its driver if installed via package manager.
     Args:
         headless (bool): Whether to run the browser in headless mode. Default is True for scraping speed.
     Returns:
@@ -42,27 +43,48 @@ def setup_webdriver(headless=True):
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        browser = os.getenv('BROWSER', 'chrome').lower()
-        if browser == 'brave':
-            logger.info("Using Brave browser")
-            if platform.system() == 'Darwin':
-                brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
-            elif platform.system() == 'Windows':
-                brave_path = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
-            else:
-                brave_path = "/usr/bin/brave-browser"
-            if os.path.exists(brave_path):
-                chrome_options.binary_location = brave_path
-            else:
-                logger.warning(f"Brave browser not found at {brave_path}, falling back to Chrome")
-        try:
-            logger.info("Creating WebDriver directly")
-            driver = webdriver.Chrome(options=chrome_options)
-        except Exception as e:
-            logger.warning(f"Failed to create WebDriver directly: {str(e)}")
-            logger.info("Falling back to ChromeDriverManager")
-            service = Service(ChromeDriverManager().install())
+        
+        # Check for Chromium binary first (common in Docker/Linux)
+        chromium_path = "/usr/bin/chromium"
+        chromedriver_path = "/usr/bin/chromedriver"
+        
+        if os.path.exists(chromium_path) and os.path.exists(chromedriver_path):
+            logger.info(f"Using system Chromium ({chromium_path}) and Chromedriver ({chromedriver_path})")
+            chrome_options.binary_location = chromium_path
+            service = Service(executable_path=chromedriver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
+        else:
+            # Fallback logic (check Brave, then try default Chrome/DriverManager)
+            logger.warning("System Chromium/Chromedriver not found at /usr/bin/. Checking for Brave...")
+            browser = os.getenv('BROWSER', 'chrome').lower()
+            if browser == 'brave':
+                logger.info("Using Brave browser")
+                if platform.system() == 'Darwin':
+                    brave_path = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+                elif platform.system() == 'Windows':
+                    brave_path = "C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe"
+                else:
+                    brave_path = "/usr/bin/brave-browser"
+                if os.path.exists(brave_path):
+                    chrome_options.binary_location = brave_path
+                    # Brave often uses Chrome driver, so try DriverManager if direct fails
+                    try:
+                        logger.info("Attempting WebDriver with Brave binary")
+                        driver = webdriver.Chrome(options=chrome_options)
+                    except Exception as e_brave_direct:
+                        logger.warning(f"Direct WebDriver with Brave binary failed ({e_brave_direct}), falling back to ChromeDriverManager for Brave")
+                        service = Service(ChromeDriverManager().install())
+                        driver = webdriver.Chrome(service=service, options=chrome_options)
+                else:
+                    logger.warning(f"Brave browser not found at {brave_path}, falling back to default Chrome/DriverManager")
+                    service = Service(ChromeDriverManager().install())
+                    driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                # Default Chrome/DriverManager if not Chromium and not Brave
+                logger.info("Falling back to default Chrome/ChromeDriverManager")
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+
         driver.set_page_load_timeout(60)
         # Block images, fonts, and stylesheets for speed
         try:
