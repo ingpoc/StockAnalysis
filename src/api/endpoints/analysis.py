@@ -3,6 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 from src.services.ai_service import AIService
 import logging
+from src.utils.cache import get_from_cache, set_to_cache, CACHE_EXPIRY_SHORT, get_cache_key
 
 router = APIRouter()
 ai_service = AIService()
@@ -11,9 +12,13 @@ logger = logging.getLogger(__name__)
 @router.get("/{symbol}/analysis-history")
 async def get_analysis_history(symbol: str):
     """Get historical AI analyses for a stock"""
+    cache_key = get_cache_key("analysis_history", symbol)
+    cached_data = get_from_cache(cache_key)
+    if cached_data:
+        return cached_data
     try:
         analyses = await ai_service.get_analysis_history(symbol)
-        return {
+        response = {
             "analyses": [
                 {
                     "id": str(analysis.id),
@@ -23,16 +28,23 @@ async def get_analysis_history(symbol: str):
                 for analysis in analyses
             ]
         }
+        set_to_cache(cache_key, response, CACHE_EXPIRY_SHORT)
+        return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{analysis_id}")
 async def get_analysis_content(analysis_id: str):
     """Get specific AI analysis content"""
+    cache_key = get_cache_key("analysis_content", analysis_id)
+    cached_data = get_from_cache(cache_key)
+    if cached_data:
+        return cached_data
     try:
         analysis = await ai_service.get_analysis_by_id(analysis_id)
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
+        set_to_cache(cache_key, analysis.dict(), CACHE_EXPIRY_SHORT)
         return analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

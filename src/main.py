@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from src.api import router
 from src.api.registry import API_DOCUMENTATION
@@ -11,12 +12,33 @@ from src.utils.logging_config import setup_logging
 logger = setup_logging()
 
 
-app = FastAPI(title="Stock Analysis API")
+app = FastAPI(
+    title="Stock Analysis API",
+    description="API for stock analysis and financial data",
+    version="1.0.0",
+)
+
+# Global exception handler for consistent error responses
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled error: {str(exc)}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "error": str(exc)}
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(f"HTTP error: {exc.detail}")
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "error": str(exc)}
+    )
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://localhost:3000", "http://localhost:3002"],
+    allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,15 +49,18 @@ app.include_router(router, prefix=settings.API_PREFIX)
 
 @app.on_event("startup")
 async def startup_db_client():
-    logger.info("Starting up database connection...")
+    """Initialize MongoDB connection on startup"""
+    logger.info("Starting up database connection")
     await connect_to_mongodb()
-    # Create database indexes for optimized query performance
     await ensure_indexes()
-    logger.info("Database initialization complete")
+    logger.info("Database connection established")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    """Close MongoDB connection on shutdown"""
+    logger.info("Shutting down database connection")
     await close_mongodb_connection()
+    logger.info("Database connection closed")
 
 @app.get("/")
 async def root():

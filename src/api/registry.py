@@ -28,7 +28,6 @@ ROUTER_CONFIG: List[Tuple[APIRouter, str, List[str]]] = [
     (market_data_router, "", ["market"]),  # Root endpoints like /market-data
     (stock_router, "/stock", ["stock"]),
     (analysis_router, "/analysis", ["analysis"]),
-    (analysis_router, "/stock", ["analysis"]),  # Mounted twice with different prefixes
     (ai_insights_router, "/ai/insights", ["ai"]),
     (database_management_router, "/database", ["database"]),  # Single database router with /database prefix
     (scraper_router, "/scraper", ["scraper"]),

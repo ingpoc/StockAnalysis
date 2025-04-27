@@ -1,57 +1,99 @@
+"""
+Cache utilities for storing and retrieving data to improve performance.
+This module provides functions for caching expensive API responses.
+"""
+import os
 import json
 import logging
-from functools import wraps
-from typing import Any, Callable
-from datetime import timedelta
-import redis.asyncio as _redis
-from src.config import settings
+from datetime import datetime, timedelta
+from typing import Any, Optional
+import redis
 
-# Initialize Redis client for async caching
-redis_client = _redis.from_url(settings.REDIS_URL, db=settings.REDIS_DB)
-
+# Configure logging
 logger = logging.getLogger(__name__)
 
-async def clear_cache_with_prefix(prefix: str):
-    """
-    Clear all Redis cache entries that start with the given prefix.
+# Redis connection (use environment variable or default to localhost)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 
+# Cache expiration times (in seconds)
+CACHE_EXPIRY_SHORT = 60 * 5  # 5 minutes for short-lived cache
+CACHE_EXPIRY_MEDIUM = 60 * 30  # 30 minutes for medium-lived cache
+CACHE_EXPIRY_LONG = 60 * 60 * 24  # 24 hours for long-lived cache
+
+def get_cache_key(prefix: str, key: str) -> str:
+    """
+    Generate a unique cache key based on prefix and key.
+    
     Args:
-        prefix (str): The prefix to match against cache keys.
+        prefix (str): Prefix for the cache key (e.g., endpoint name).
+        key (str): Unique identifier for the cached item.
+        
+    Returns:
+        str: Combined cache key.
     """
-    pattern = f"{prefix}*"
-    keys_to_remove = []
-    async for key in redis_client.scan_iter(match=pattern):
-        keys_to_remove.append(key)
-    if keys_to_remove:
-        await redis_client.delete(*keys_to_remove)
-    logger.info(f"Cleared {len(keys_to_remove)} Redis cache entries with prefix '{prefix}'")
+    return f"{prefix}:{key}"
 
-def cache_with_ttl(ttl_seconds: int = 300):
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            # Generate cache key based on function name and args
-            force_refresh = kwargs.get('force_refresh', False)
-            cache_key = f"{func.__name__}:{args}:{kwargs}"
+def get_from_cache(cache_key: str) -> Optional[Any]:
+    """
+    Retrieve data from cache using the provided key.
+    
+    Args:
+        cache_key (str): Key to look up in cache.
+        
+    Returns:
+        Optional[Any]: Cached data if found and valid, None otherwise.
+    """
+    try:
+        cached_data = redis_client.get(cache_key)
+        if cached_data:
+            logger.info(f"Cache hit for key: {cache_key}")
+            return json.loads(cached_data)
+        logger.info(f"Cache miss for key: {cache_key}")
+        return None
+    except Exception as e:
+        logger.error(f"Error retrieving from cache for key {cache_key}: {str(e)}")
+        return None
 
-            # Try retrieving from Redis
-            if not force_refresh:
-                try:
-                    cached = await redis_client.get(cache_key)
-                    if cached:
-                        return json.loads(cached)
-                except Exception as e:
-                    logger.warning(f"Redis GET error for {cache_key}: {e}")
+def set_to_cache(cache_key: str, data: Any, expiry_seconds: int) -> bool:
+    """
+    Store data in cache with the specified key and expiration time.
+    
+    Args:
+        cache_key (str): Key to store data under.
+        data (Any): Data to cache.
+        expiry_seconds (int): Cache expiration time in seconds.
+        
+    Returns:
+        bool: True if caching was successful, False otherwise.
+    """
+    try:
+        serialized_data = json.dumps(data)
+        redis_client.setex(cache_key, expiry_seconds, serialized_data)
+        logger.info(f"Cached data for key: {cache_key} with expiry {expiry_seconds}s")
+        return True
+    except Exception as e:
+        logger.error(f"Error setting cache for key {cache_key}: {str(e)}")
+        return False
 
-            # Call the original function and cache its result
-            result = await func(*args, **kwargs)
-            try:
-                # Prepare data for serialization
-                data_to_cache = result.dict() if hasattr(result, 'dict') else result
-                serialized = json.dumps(data_to_cache, default=str)
-                await redis_client.set(cache_key, serialized, ex=ttl_seconds)
-            except Exception as e:
-                logger.warning(f"Redis SET error for {cache_key}: {e}")
-            return result
-        return wrapper
-    return decorator
+def clear_cache_with_prefix(prefix: str) -> bool:
+    """
+    Clear all cache entries with the specified prefix.
+    
+    Args:
+        prefix (str): Prefix to match cache keys for deletion.
+        
+    Returns:
+        bool: True if cache clearing was successful, False otherwise.
+    """
+    try:
+        keys = redis_client.keys(f"{prefix}:*")
+        if keys:
+            redis_client.delete(*keys)
+            logger.info(f"Cleared {len(keys)} cache entries with prefix: {prefix}")
+        else:
+            logger.info(f"No cache entries found with prefix: {prefix}")
+        return True
+    except Exception as e:
+        logger.error(f"Error clearing cache with prefix {prefix}: {str(e)}")
+        return False

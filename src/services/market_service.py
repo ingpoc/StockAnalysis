@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 import re
 from src.models.schemas import MarketOverview, StockResponse, StockData
-from src.utils.cache import cache_with_ttl, clear_cache_with_prefix
+from src.utils.cache import get_from_cache, set_to_cache, CACHE_EXPIRY_MEDIUM, CACHE_EXPIRY_LONG, get_cache_key
 from src.utils.database import get_database
 import logging
 from bson import ObjectId
@@ -143,7 +143,6 @@ class MarketService:
             logger.error(f"Error in batch stock details: {str(e)}")
             raise Exception(f"Failed to fetch batch stock details: {str(e)}")
 
-    @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_market_data(self, quarter: Optional[str] = None, force_refresh: bool = False) -> MarketOverview:
         """Get market overview data with optional quarter filter"""
         try:
@@ -240,18 +239,26 @@ class MarketService:
                 reverse=True
             )
 
-            return MarketOverview(
+            market_data = MarketOverview(
                 top_performers=sorted_stocks[:10],
                 worst_performers=sorted_stocks[-10:],
                 latest_results=latest_results[:10],
                 all_stocks=stocks
             )
 
+            cache_key = get_cache_key("market_data", quarter or "latest")
+            if not force_refresh:
+                cached_data = get_from_cache(cache_key)
+                if cached_data:
+                    return MarketOverview(**cached_data)
+
+            set_to_cache(cache_key, market_data.dict(), CACHE_EXPIRY_MEDIUM)
+            return market_data
+
         except Exception as e:
             logger.error(f"Error fetching market data: {str(e)}")
             raise Exception(f"Failed to fetch market data: {str(e)}")
 
-    @cache_with_ttl(ttl_seconds=3600)  # Cache for 1 hour
     async def get_available_quarters(self, force_refresh: bool = False) -> List[str]:
         """Get list of available quarters from the database (optimized)"""
         try:
@@ -307,6 +314,15 @@ class MarketService:
                     quarters.append(doc["_id"])
             
             logger.info(f"Retrieved {len(quarters)} available quarters from database")
+
+            cache_key = get_cache_key("quarters", "all")
+            if not force_refresh:
+                cached_data = get_from_cache(cache_key)
+                if cached_data:
+                    return cached_data.get("quarters", [])
+
+            response = {"quarters": quarters}
+            set_to_cache(cache_key, response, CACHE_EXPIRY_LONG)
             return quarters
         except Exception as e:
             logger.error(f"Error fetching available quarters: {str(e)}")
