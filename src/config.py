@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_HOUR: int = 1000
     
     # CORS
-    ALLOWED_ORIGINS: str = '["http://localhost:3000", "https://localhost:3000"]'
+    ALLOWED_ORIGINS: List[str] = ["http://localhost:3000", "https://localhost:3000"]
     
     # Twitter API Settings
     TWITTER_CONSUMER_KEY: Optional[str] = None
@@ -49,9 +49,16 @@ class Settings(BaseSettings):
     )
 
     def validate(self) -> None:
-        if not self.XAI_API_KEY:
-            raise ValueError("XAI_API_KEY must be set in environment variables")
-        if not self.XAI_API_URL:
-            raise ValueError("XAI_API_URL must be set in environment variables")
+        required_fields = {
+            'MONGODB_URI': self.MONGODB_URI,
+            'MONGODB_DB_NAME': self.MONGODB_DB_NAME,
+            'REDIS_URL': self.REDIS_URL,
+            'XAI_API_KEY': self.XAI_API_KEY,
+            'XAI_API_URL': self.XAI_API_URL
+        }
+        for field_name, value in required_fields.items():
+            if not value:
+                raise ValueError(f"{field_name} must be set in environment variables")
 
 settings = Settings()
+settings.validate()
