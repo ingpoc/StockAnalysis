@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 async def get_analysis_history(symbol: str):
     """Get historical AI analyses for a stock"""
     cache_key = get_cache_key("analysis_history", symbol)
-    cached_data = get_from_cache(cache_key)
+    cached_data = await get_from_cache(cache_key)
     if cached_data:
         return cached_data
     try:
@@ -28,7 +28,7 @@ async def get_analysis_history(symbol: str):
                 for analysis in analyses
             ]
         }
-        set_to_cache(cache_key, response, CACHE_EXPIRY_SHORT)
+        await set_to_cache(cache_key, response, CACHE_EXPIRY_SHORT)
         return response
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -37,14 +37,14 @@ async def get_analysis_history(symbol: str):
 async def get_analysis_content(analysis_id: str):
     """Get specific AI analysis content"""
     cache_key = get_cache_key("analysis_content", analysis_id)
-    cached_data = get_from_cache(cache_key)
+    cached_data = await get_from_cache(cache_key)
     if cached_data:
         return cached_data
     try:
         analysis = await ai_service.get_analysis_by_id(analysis_id)
         if not analysis:
             raise HTTPException(status_code=404, detail="Analysis not found")
-        set_to_cache(cache_key, analysis.dict(), CACHE_EXPIRY_SHORT)
+        await set_to_cache(cache_key, analysis.dict(), CACHE_EXPIRY_SHORT)
         return analysis
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

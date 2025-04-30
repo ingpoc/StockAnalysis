@@ -7,14 +7,14 @@ import json
 import logging
 from datetime import datetime, timedelta
 from typing import Any, Optional
-import redis
+import redis.asyncio as redis
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
 # Redis connection (use environment variable or default to localhost)
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+redis_client = redis.from_url(REDIS_URL, decode_responses=True)
 
 # Cache expiration times (in seconds)
 CACHE_EXPIRY_SHORT = 60 * 5  # 5 minutes for short-lived cache
@@ -34,7 +34,7 @@ def get_cache_key(prefix: str, key: str) -> str:
     """
     return f"{prefix}:{key}"
 
-def get_from_cache(cache_key: str) -> Optional[Any]:
+async def get_from_cache(cache_key: str) -> Optional[Any]:
     """
     Retrieve data from cache using the provided key.
     
@@ -45,7 +45,7 @@ def get_from_cache(cache_key: str) -> Optional[Any]:
         Optional[Any]: Cached data if found and valid, None otherwise.
     """
     try:
-        cached_data = redis_client.get(cache_key)
+        cached_data = await redis_client.get(cache_key)
         if cached_data:
             logger.info(f"Cache hit for key: {cache_key}")
             return json.loads(cached_data)
@@ -55,7 +55,7 @@ def get_from_cache(cache_key: str) -> Optional[Any]:
         logger.error(f"Error retrieving from cache for key {cache_key}: {str(e)}")
         return None
 
-def set_to_cache(cache_key: str, data: Any, expiry_seconds: int) -> bool:
+async def set_to_cache(cache_key: str, data: Any, expiry_seconds: int) -> bool:
     """
     Store data in cache with the specified key and expiration time.
     
@@ -69,16 +69,16 @@ def set_to_cache(cache_key: str, data: Any, expiry_seconds: int) -> bool:
     """
     try:
         serialized_data = json.dumps(data)
-        redis_client.setex(cache_key, expiry_seconds, serialized_data)
+        await redis_client.setex(cache_key, expiry_seconds, serialized_data)
         logger.info(f"Cached data for key: {cache_key} with expiry {expiry_seconds}s")
         return True
     except Exception as e:
         logger.error(f"Error setting cache for key {cache_key}: {str(e)}")
         return False
 
-def clear_cache_with_prefix(prefix: str) -> bool:
+async def clear_cache_with_prefix(prefix: str) -> bool:
     """
-    Clear all cache entries with the specified prefix.
+    Clear all cache entries with the specified prefix without using KEYS operation.
     
     Args:
         prefix (str): Prefix to match cache keys for deletion.
@@ -87,13 +87,27 @@ def clear_cache_with_prefix(prefix: str) -> bool:
         bool: True if cache clearing was successful, False otherwise.
     """
     try:
-        keys = redis_client.keys(f"{prefix}:*")
-        if keys:
-            redis_client.delete(*keys)
-            logger.info(f"Cleared {len(keys)} cache entries with prefix: {prefix}")
-        else:
-            logger.info(f"No cache entries found with prefix: {prefix}")
+        cursor = 0
+        count = 0
+        while True:
+            cursor, keys = await redis_client.scan(cursor, match=f"{prefix}:*", count=100)
+            if keys:
+                await redis_client.delete(*keys)
+                count += len(keys)
+            if cursor == 0:
+                break
+        logger.info(f"Cleared {count} cache entries with prefix: {prefix}")
         return True
     except Exception as e:
         logger.error(f"Error clearing cache with prefix {prefix}: {str(e)}")
         return False
+
+async def init_redis():
+    """
+    Initialize Redis connection and check if it's working.
+    """
+    try:
+        await redis_client.ping()
+        logger.info("Redis connection initialized successfully")
+    except Exception as e:
+        logger.error(f"Failed to initialize Redis connection: {str(e)}")

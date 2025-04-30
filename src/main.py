@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api import router
 from src.api.registry import API_DOCUMENTATION
 from src.utils.database import connect_to_mongodb, close_mongodb_connection, ensure_indexes
+from src.utils.cache import init_redis
 from src.config import settings
 import logging
 from src.utils.logging_config import setup_logging
@@ -49,11 +50,12 @@ app.include_router(router, prefix=settings.API_PREFIX)
 
 @app.on_event("startup")
 async def startup_db_client():
-    """Initialize MongoDB connection on startup"""
+    """Initialize MongoDB connection and Redis on startup"""
     logger.info("Starting up database connection")
     await connect_to_mongodb()
     await ensure_indexes()
     logger.info("Database connection established")
+    await init_redis()
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

@@ -248,11 +248,18 @@ class MarketService:
 
             cache_key = get_cache_key("market_data", quarter or "latest")
             if not force_refresh:
-                cached_data = get_from_cache(cache_key)
+                cached_data = await get_from_cache(cache_key)
                 if cached_data:
                     return MarketOverview(**cached_data)
 
-            set_to_cache(cache_key, market_data.dict(), CACHE_EXPIRY_MEDIUM)
+            # Convert datetime objects to string for serialization
+            market_data_dict = market_data.dict()
+            for stock_list in ['top_performers', 'worst_performers', 'latest_results', 'all_stocks']:
+                for stock in market_data_dict[stock_list]:
+                    if 'result_date' in stock and isinstance(stock['result_date'], datetime):
+                        stock['result_date'] = stock['result_date'].isoformat()
+
+            await set_to_cache(cache_key, market_data_dict, CACHE_EXPIRY_MEDIUM)
             return market_data
 
         except Exception as e:
