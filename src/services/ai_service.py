@@ -26,7 +26,7 @@ class AIService:
         """
         try:
             db = await get_database()
-            collection = db['ai_analyses']
+            collection = db['ai_analysis']
 
             # Fetch analyses sorted by timestamp descending
             cursor = collection.find({'symbol': symbol}).sort('timestamp', -1).limit(limit)
@@ -52,7 +52,7 @@ class AIService:
     async def get_analysis_by_id(self, analysis_id: str) -> Optional[AIAnalysis]:
         try:
             db = await get_database()
-            analysis_doc = await db.ai_analyses.find_one({"_id": ObjectId(analysis_id)})
+            analysis_doc = await db.ai_analysis.find_one({"_id": ObjectId(analysis_id)})
             if analysis_doc is None:
                 logger.info(f"No analysis found with ID: {analysis_id}")
                 return None
@@ -101,7 +101,7 @@ class AIService:
 
             # Insert into database
             try:
-                result = await db.ai_analyses.insert_one(analysis)
+                result = await db.ai_analysis.insert_one(analysis)
                 if result is None:
                     raise Exception("Failed to insert analysis into database")
                     
