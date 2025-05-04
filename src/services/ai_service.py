@@ -13,29 +13,46 @@ class AIService:
     def __init__(self):
         pass
 
-    async def get_analysis_history(self, symbol: str) -> List[AIAnalysis]:
+    async def get_analysis_history(self, symbol: str, limit: int = 5) -> List[AIAnalysis]:
+        """
+        Retrieve the analysis history for a specific stock symbol.
+
+        Args:
+            symbol (str): The stock symbol to filter analyses for.
+            limit (int, optional): Maximum number of analyses to return. Defaults to 5.
+
+        Returns:
+            List[AIAnalysis]: List of AI analysis objects sorted by timestamp in descending order.
+        """
         try:
             db = await get_database()
-            cursor = db.ai_analysis.find({"symbol": symbol}).sort("timestamp", -1)
-            analyses = await cursor.to_list(length=None)
-            if analyses is None:
-                analyses = []
-            
-            logger.info(f"Fetched {len(analyses)} analyses for symbol: {symbol}")
-            try:
-                return [AIAnalysis.from_mongo(analysis) for analysis in analyses if analysis]
-            except Exception as e:
-                logger.error(f"Error converting MongoDB documents to AIAnalysis: {str(e)}")
-                raise Exception(f"Error parsing analysis data: {str(e)}")
-                
+            collection = db['ai_analyses']
+
+            # Fetch analyses sorted by timestamp descending
+            cursor = collection.find({'symbol': symbol}).sort('timestamp', -1).limit(limit)
+            analyses = await cursor.to_list(length=limit)
+
+            # Use the from_mongo classmethod to handle potential structure inconsistencies
+            valid_analyses = []
+            for analysis_doc in analyses:
+                if analysis_doc:
+                    try:
+                        parsed_analysis = AIAnalysis.from_mongo(analysis_doc)
+                        if parsed_analysis: # Ensure parsing was successful
+                           valid_analyses.append(parsed_analysis)
+                    except Exception as parse_error:
+                        logger.error(f"Error parsing analysis document (ID: {analysis_doc.get('_id', 'N/A')}): {parse_error}")
+                        # Optionally skip this analysis or handle the error differently
+
+            return valid_analyses
         except Exception as e:
-            logger.error(f"Error fetching analysis history: {str(e)}")
-            raise Exception(f"Error fetching analysis history: {str(e)}")
+            logger.error(f"Error fetching analysis history for {symbol}: {e}")
+            return []
 
     async def get_analysis_by_id(self, analysis_id: str) -> Optional[AIAnalysis]:
         try:
             db = await get_database()
-            analysis_doc = await db.ai_analysis.find_one({"_id": ObjectId(analysis_id)})
+            analysis_doc = await db.ai_analyses.find_one({"_id": ObjectId(analysis_id)})
             if analysis_doc is None:
                 logger.info(f"No analysis found with ID: {analysis_id}")
                 return None
@@ -84,7 +101,7 @@ class AIService:
 
             # Insert into database
             try:
-                result = await db.ai_analysis.insert_one(analysis)
+                result = await db.ai_analyses.insert_one(analysis)
                 if result is None:
                     raise Exception("Failed to insert analysis into database")
                     

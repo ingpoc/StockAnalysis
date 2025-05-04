@@ -324,12 +324,15 @@ class MarketService:
 
             cache_key = get_cache_key("quarters", "all")
             if not force_refresh:
-                cached_data = get_from_cache(cache_key)
+                # Await the async cache retrieval function
+                cached_data = await get_from_cache(cache_key)
                 if cached_data:
+                    # Access the dictionary returned by the awaited function
                     return cached_data.get("quarters", [])
 
             response = {"quarters": quarters}
-            set_to_cache(cache_key, response, CACHE_EXPIRY_LONG)
+            # Await the async cache setting function
+            await set_to_cache(cache_key, response, CACHE_EXPIRY_LONG)
             return quarters
         except Exception as e:
             logger.error(f"Error fetching available quarters: {str(e)}")

@@ -3,7 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 from src.services.ai_service import AIService
 import logging
-from src.utils.cache import get_from_cache, set_to_cache, CACHE_EXPIRY_SHORT, get_cache_key
+from src.utils.cache import get_from_cache, set_to_cache, CACHE_EXPIRY_SHORT, get_cache_key, redis_client
 
 router = APIRouter()
 ai_service = AIService()
@@ -56,6 +56,12 @@ async def refresh_analysis(symbol: str):
         logger.info(f"Starting refresh analysis for symbol: {symbol}")
         new_analysis = await ai_service.analyze_stock(symbol)
         logger.info(f"Successfully generated analysis for {symbol}")
+        
+        # Invalidate the cache for analysis history after successful generation
+        cache_key = get_cache_key("analysis_history", symbol)
+        await redis_client.delete(cache_key)
+        logger.info(f"Invalidated cache key: {cache_key}")
+        
         return {
             "id": str(new_analysis.id),
             "content": new_analysis.content,

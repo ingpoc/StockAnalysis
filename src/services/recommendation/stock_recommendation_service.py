@@ -42,15 +42,29 @@ class StockRecommendationService:
             ai_analyses = await self.ai_service.get_analysis_history(symbol)
             latest_analysis = ai_analyses[0] if ai_analyses else None
             
+            # Ensure AI analysis ID is stringified if present
+            if latest_analysis and hasattr(latest_analysis, '_id'):
+                 # Make sure we're dealing with a dict-like structure or convert if needed
+                 if not isinstance(latest_analysis, dict) and hasattr(latest_analysis, 'model_dump'):
+                     latest_analysis = latest_analysis.model_dump() # Convert Pydantic model
+                 
+                 if isinstance(latest_analysis, dict) and '_id' in latest_analysis:
+                     latest_analysis['_id'] = str(latest_analysis['_id'])
+
             # Generate recommendation based on available data (which might include old or no AI analysis)
             recommendation = await self._generate_recommendation(stock_details, latest_analysis)
             
-            # Add recommendation timestamp
+            # Add recommendation timestamp and symbol
             recommendation["timestamp"] = datetime.now()
             recommendation["symbol"] = symbol
+
+            # Convert any potential ObjectId in the final recommendation dict (redundant but safe)
+            if "_id" in recommendation and isinstance(recommendation["_id"], ObjectId):
+                recommendation["_id"] = str(recommendation["_id"])
             
             # Store recommendation in database for future reference
-            await self._store_recommendation(recommendation)
+            # Note: Storing happens *after* the main generation and potential return ObjectId conversion
+            await self._store_recommendation(recommendation.copy()) # Store a copy to avoid mutation issues
             
             return recommendation
             
@@ -323,13 +337,38 @@ class StockRecommendationService:
             }
     
     async def _store_recommendation(self, recommendation: Dict[str, Any]) -> None:
-        """Store the recommendation in the database for future reference."""
+        """Store the recommendation in the database for future reference, ensuring timestamp is a datetime object."""
         try:
             db = await get_database()
             collection = db["stock_recommendations"]
+
+            # Ensure timestamp is always a datetime object before storing
+            if "timestamp" in recommendation and not isinstance(recommendation["timestamp"], datetime):
+                try:
+                    # Attempt to parse from ISO format string (handle Z for UTC)
+                    ts_str = recommendation["timestamp"]
+                    if isinstance(ts_str, str):
+                         # Replace Z with +00:00 for Python compatibility if present
+                         if ts_str.endswith('Z'):
+                              ts_str = ts_str[:-1] + '+00:00'
+                         recommendation["timestamp"] = datetime.fromisoformat(ts_str)
+                    else:
+                         # If it's not a string or datetime, default to now
+                         logger.warning(f"Recommendation timestamp for {recommendation.get('symbol')} was not a string or datetime, using current time.")
+                         recommendation["timestamp"] = datetime.now()
+                except (ValueError, AttributeError, TypeError) as parse_error:
+                    logger.warning(f"Could not parse recommendation timestamp '{recommendation['timestamp']}' for {recommendation.get('symbol')}. Error: {parse_error}. Using current time.")
+                    recommendation["timestamp"] = datetime.now()
+            elif "timestamp" not in recommendation:
+                 # If timestamp key doesn't exist at all, add it
+                 logger.warning(f"Recommendation timestamp missing for {recommendation.get('symbol')}, adding current time.")
+                 recommendation["timestamp"] = datetime.now()
             
+            # Now recommendation["timestamp"] should be a valid datetime object
+
             # Insert recommendation
             await collection.insert_one(recommendation)
+            logger.info(f"Stored recommendation for {recommendation.get('symbol')} with timestamp {recommendation['timestamp']}")
             
         except Exception as e:
             logger.error(f"Error storing recommendation: {str(e)}")
@@ -342,18 +381,45 @@ class StockRecommendationService:
             
             # Find recommendations for this symbol less than 7 days old
             cutoff_date = datetime.now() - timedelta(days=7)
+            cutoff_date_str = cutoff_date.isoformat()
             
+            logger.info(f"Finding recommendations for {symbol} newer than {cutoff_date}")
+            
+            # First, let's check if we have any REDUCE recommendations (highest priority)
+            # Use $or to handle both datetime and string timestamps
+            reduce_recommendation = await collection.find_one({
+                "symbol": symbol,
+                "action": "REDUCE",
+                "$or": [
+                    {"timestamp": {"$gte": cutoff_date}},  # For datetime objects
+                    {"timestamp": {"$gte": cutoff_date_str}}  # For string timestamps
+                ]
+            }, sort=[("timestamp", -1)])
+            
+            if reduce_recommendation:
+                logger.info(f"Found REDUCE recommendation for {symbol} with timestamp {reduce_recommendation.get('timestamp')}")
+                # Convert ObjectId to string for serialization
+                if "_id" in reduce_recommendation:
+                    reduce_recommendation["_id"] = str(reduce_recommendation["_id"])
+                return reduce_recommendation
+            
+            # If no REDUCE recommendation, get the most recent recommendation of any type
             recommendation = await collection.find_one({
                 "symbol": symbol,
-                "timestamp": {"$gte": cutoff_date}
+                "$or": [
+                    {"timestamp": {"$gte": cutoff_date}},  # For datetime objects
+                    {"timestamp": {"$gte": cutoff_date_str}}  # For string timestamps
+                ]
             }, sort=[("timestamp", -1)])
             
             if recommendation:
+                logger.info(f"Found recommendation for {symbol} with action {recommendation.get('action')} and timestamp {recommendation.get('timestamp')}")
                 # Convert ObjectId to string for serialization
                 if "_id" in recommendation:
                     recommendation["_id"] = str(recommendation["_id"])
                 return recommendation
-                
+            
+            logger.info(f"No recent recommendations found for {symbol}")
             return None
             
         except Exception as e:
