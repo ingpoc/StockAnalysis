@@ -10,6 +10,57 @@ router = APIRouter()
 market_service = MarketService()
 logger = logging.getLogger(__name__)
 
+@router.get("/search", response_model=List[Dict[str, Any]])
+async def search_stocks(
+    q: str = Query(..., min_length=2, description="Search query for stock symbol or company name"),
+    limit: int = Query(10, ge=1, le=50, description="Limit the number of search results"),
+    db=Depends(get_database)
+):
+    """
+    Search for stocks by symbol or company name.
+    Performs a case-insensitive partial match.
+    Returns only symbol, company_name, and latest CMP.
+    """
+    try:
+        stocks_collection = db.detailed_financials
+        regex_query = {"$regex": q, "$options": "i"}
+        search_filter = {
+            "$or": [
+                {"symbol": regex_query},
+                {"company_name": regex_query}
+            ]
+        }
+        # Projection optimized to fetch only necessary fields and latest metrics
+        projection = {
+            "_id": 0, 
+            "symbol": 1, 
+            "company_name": 1, 
+            "financial_metrics": {"$slice": -1} # Get only the last element (latest quarter's metrics)
+        }
+
+        cursor = stocks_collection.find(search_filter, projection).limit(limit)
+        results = []
+        async for stock in cursor:
+            latest_cmp = "N/A"
+            # Extract CMP from the single element in financial_metrics (if it exists)
+            if stock.get("financial_metrics") and len(stock["financial_metrics"]) > 0:
+                latest_metric = stock["financial_metrics"][0]
+                latest_cmp = latest_metric.get("cmp", "N/A")
+
+            results.append({
+                "symbol": stock.get("symbol"),
+                "company_name": stock.get("company_name"),
+                "cmp": latest_cmp
+            })
+            
+        # If no results found, return empty list (HTTP 200)
+        return results 
+        
+    except Exception as e:
+        # Log the error and return HTTP 500
+        logger.error(f"Error searching stocks with query '{q}': {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error searching stocks: An internal server error occurred.")
+
 @router.get("/{symbol}", response_model=Dict[str, Any])
 async def get_stock_data(
     symbol: str, 
